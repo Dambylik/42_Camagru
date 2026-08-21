@@ -15,9 +15,9 @@ Legend for each step:
 ## Phase 0 — Foundations & environment
 
 ### 0.1 Set up the repo and Docker
-- **Do:** `git init` (already done). Create `docker-compose.yml` with 3 services: `web` (PHP + Apache or PHP built-in server), `db` (MySQL/MariaDB), optionally `mailhog` (fake SMTP for testing emails). One command deploy: `docker compose up`.
+- **Do:** `git init` (already done). Create `docker-compose.yml` with 3 services: `web` (PHP + Apache or PHP built-in server), `db` (MySQL/MariaDB), optionally `mailpit` (fake SMTP for testing emails). One command deploy: `docker compose up`.
 - **Learn:** What a container/image is; `docker-compose.yml` structure (services, ports, volumes, environment, depends_on); how containers talk over the compose network by service name (`db`, not `localhost`).
-- **Check:** `docker compose up` starts everything; PHP page loads at `localhost:8080`; PHP can connect to `db`.
+- **Check:** `docker compose up` starts everything; PHP page loads at `localhost:8000`; PHP can connect to `db`.
 - **Best practice:** Never bake credentials into the image. Pass DB creds via `environment:` from `.env`. Use named volumes so DB data survives restarts.
 
 ### 0.2 `.env` and secrets
@@ -66,7 +66,7 @@ Legend for each step:
 
 ### 2.2 Email confirmation
 - **Do:** On signup, email a unique link (`/confirm?token=...`). Clicking it sets `is_verified = 1`. Block login until verified.
-- **Learn:** Generating secure random tokens (`random_bytes()` + `bin2hex()`); sending mail from PHP (`mail()` or PHPMailer-as-library check — but subject wants stdlib equivalents; MailHog for local testing); token expiry.
+- **Learn:** Generating secure random tokens (`random_bytes()` + `bin2hex()`); sending mail from PHP (`mail()` or PHPMailer-as-library check — but subject wants stdlib equivalents; Mailpit for local testing); token expiry.
 - **Check:** Unverified user cannot log in. Token works once. Tampered token fails.
 - **Best practice:** Tokens must be unguessable (cryptographically random), single-use, and time-limited.
 
@@ -168,7 +168,7 @@ Legend for each step:
 
 ### 5.3 Comment email notification + preference
 - **Do:** When an image gets a new comment, email the image's author. Preference **defaults ON**, toggleable in user settings.
-- **Learn:** Reading a user preference flag; sending mail on an event; testing with MailHog.
+- **Learn:** Reading a user preference flag; sending mail on an event; testing with Mailpit.
 - **Check:** Author gets email on new comment; turning the preference off stops emails; default is on for new users.
 - **Best practice:** Respect the notification preference everywhere it's checked; test the toggle both ways.
 

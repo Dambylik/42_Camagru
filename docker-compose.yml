@@ -1,0 +1,31 @@
+services:
+    web:
+        build: . ## build image from a Dockerfile in this folder
+        ports:
+            - "8000:80"  # HOST:CONTAINER — visit localhost:8000, it hits  Apache in port 80
+        volumes:
+            - ./src:/var/www/html # HOST_path:CONTAINER_path — live-sync your code
+        environment:
+            DB_HOST: db # <-- the service name, NOT localhost
+            DB_USER: ${MYSQL_USER}
+            DB_PASSWORD: ${MYSQL_PASSWORD}
+        depends_on:
+            - db    # start db before web
+
+    db:  
+        image: mariadb:11 # 3306 — the database's default internal port
+        environment:
+            MYSQL_DATABASE: ${MYSQL_DATABASE}
+            MYSQL_USER: ${MYSQL_USER}
+            MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+            MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+        volumes:
+            - db_data:/var/lib/mysql # named volume — keeps DB data alive across restarts
+
+    mailpit:
+        image: axllent/mailpit
+        ports:
+            - "8025:8025" # Mailpit web UI, # SMTP is on port 1025 inside the network; web sends here, you read at :8025
+    
+volumes:
+    db_data: # named volume for DB data
