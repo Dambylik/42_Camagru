@@ -12,4 +12,8 @@ RUN apt-get update && apt-get install -y libpng-dev libjpeg-dev \
     && docker-php-ext-install pdo_mysql gd \
     && rm -rf /var/lib/apt/lists/*
 
-# Apache serves /var/www/html — your compose volume mounts ./src here
+# Serve only public/ (keeps app/ source out of the web root).
+# All requests hit public/index.php?page=... — no rewrite module needed.
+COPY config/apache.conf /etc/apache2/sites-available/000-default.conf
+
+# Apache serves /var/www/html/public — compose mounts the whole project at /var/www/html
