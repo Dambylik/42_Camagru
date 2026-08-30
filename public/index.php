@@ -1,6 +1,5 @@
 <?php
-session_start();
-
+require __DIR__ . '/../config/setup.php';
 require __DIR__ . '/../app/core/Router.php';
 require __DIR__ . '/../app/core/Csrf.php';
 
@@ -23,8 +22,9 @@ $router->post('profile',      ['AuthController', 'profile']);
 
 // Feed
 $router->get('home',          ['FeedController', 'index']);
-$router->post('like',         ['FeedController', 'like']);
-$router->post('comment',      ['FeedController', 'comment']);
+$router->get('gallery-json',  ['FeedController', 'galleryJson']);
+$router->post('like-ajax',    ['FeedController', 'likeAjax']);
+$router->post('comment-ajax', ['FeedController', 'commentAjax']);
 
 // Editor
 $router->get('editor',        ['EditorController', 'show']);

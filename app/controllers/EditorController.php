@@ -24,14 +24,9 @@ class EditorController
         $this->requireLogin();
         Csrf::verify();
 
-        $dataUrl   = $_POST['image_data'] ?? '';
-        $overlayId = (int) ($_POST['overlay_id'] ?? 0);
-        $ovX       = (int) ($_POST['overlay_x']  ?? 0);
-        $ovY       = (int) ($_POST['overlay_y']  ?? 0);
-        $ovW       = (int) ($_POST['overlay_w']  ?? 600);
-        $ovH       = (int) ($_POST['overlay_h']  ?? 600);
-
-        if (!$overlayId) $this->editorError('Please select an overlay.');
+        $dataUrl  = $_POST['image_data'] ?? '';
+        $stickers = json_decode($_POST['stickers'] ?? '[]', true);
+        if (!is_array($stickers)) $stickers = [];
 
         if (!preg_match('/^data:image\/png;base64,/', $dataUrl)) {
             $this->editorError('Invalid image data.');
@@ -40,7 +35,7 @@ class EditorController
         $base = @imagecreatefromstring($raw);
         if (!$base) $this->editorError('Could not decode captured image.');
 
-        $this->composite($base, $overlayId, $ovX, $ovY, $ovW, $ovH);
+        $this->composite($base, $stickers);
     }
 
     // Called when user uploads a file instead of using webcam
@@ -48,9 +43,6 @@ class EditorController
     {
         $this->requireLogin();
         Csrf::verify();
-
-        $overlayId = (int) ($_POST['overlay_id'] ?? 0);
-        if (!$overlayId) $this->editorError('Please select an overlay.');
 
         $file = $_FILES['photo'] ?? null;
         if (!$file || $file['error'] !== UPLOAD_ERR_OK) $this->editorError('Upload failed.');
@@ -64,8 +56,7 @@ class EditorController
         $base = @imagecreatefromstring(file_get_contents($file['tmp_name']));
         if (!$base) $this->editorError('Could not read uploaded image.');
 
-        // Upload uses full-frame overlay (no drag positioning)
-        $this->composite($base, $overlayId, 0, 0, 600, 600);
+        $this->composite($base, []);
     }
 
     public function delete(): void
@@ -96,30 +87,36 @@ class EditorController
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private function composite(\GdImage $base, int $overlayId, int $ovX, int $ovY, int $ovW, int $ovH): void
+    private function composite(\GdImage $base, array $stickers): void
     {
-        $overlays = Image::allOverlays();
-        $overlay  = null;
-        foreach ($overlays as $o) {
-            if ((int) $o['id'] === $overlayId) { $overlay = $o; break; }
-        }
-        if (!$overlay) $this->editorError('Invalid overlay.');
-
-        $overlayPath = __DIR__ . '/../../public/overlays/' . basename($overlay['path']);
-        if (!file_exists($overlayPath)) $this->editorError('Overlay file not found.');
-
-        $over = @imagecreatefrompng($overlayPath);
-        if (!$over) $this->editorError('Could not load overlay.');
-
         // Resize base to 600×600
         $out = imagecreatetruecolor(600, 600);
         imagecopyresampled($out, $base, 0, 0, 0, 0, 600, 600, imagesx($base), imagesy($base));
         imagedestroy($base);
 
-        // Composite overlay at the position/size the user chose
-        imagealphablending($out, true);
-        imagecopyresampled($out, $over, $ovX, $ovY, 0, 0, $ovW, $ovH, imagesx($over), imagesy($over));
-        imagedestroy($over);
+        // Composite each sticker in order
+        if (!empty($stickers)) {
+            $allOverlays = Image::allOverlays();
+            $overlayMap  = [];
+            foreach ($allOverlays as $o) $overlayMap[(int)$o['id']] = $o;
+
+            imagealphablending($out, true);
+            foreach ($stickers as $s) {
+                $id  = (int) ($s['id'] ?? 0);
+                $ovX = (int) ($s['x']  ?? 0);
+                $ovY = (int) ($s['y']  ?? 0);
+                $ovW = (int) ($s['w']  ?? 600);
+                $ovH = (int) ($s['h']  ?? 600);
+
+                if (!isset($overlayMap[$id])) continue;
+                $path = __DIR__ . '/../../public/overlays/' . basename($overlayMap[$id]['path']);
+                if (!file_exists($path)) continue;
+                $over = @imagecreatefrompng($path);
+                if (!$over) continue;
+                imagecopyresampled($out, $over, $ovX, $ovY, 0, 0, $ovW, $ovH, imagesx($over), imagesy($over));
+                imagedestroy($over);
+            }
+        }
 
         $filename = bin2hex(random_bytes(16)) . '.png';
         $savePath = self::UPLOAD_DIR . $filename;
