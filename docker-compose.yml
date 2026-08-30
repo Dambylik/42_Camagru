@@ -6,12 +6,15 @@ services:
         volumes:
             - ./:/var/www/html # HOST_path:CONTAINER_path — live-sync your code
         environment:
-            DB_HOST: db # <-- the service name, NOT localhost
+            DB_HOST: db
             DB_NAME: ${MYSQL_DATABASE}
             DB_USER: ${MYSQL_USER}
             DB_PASSWORD: ${MYSQL_PASSWORD}
+            APP_URL: ${APP_URL}
+            MAIL_FROM: ${MAIL_FROM}
         depends_on:
-            - db    # start db before web
+            - db
+            - mailpit
 
     db:  
         image: mariadb:11 # 3306 — the database's default internal port
@@ -22,7 +25,7 @@ services:
             MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
         volumes:
             - db_data:/var/lib/mysql # named volume — keeps DB data alive across restarts
-            - ./sql:/docker-entrypoint-initdb.d:ro # *.sql here auto-run on FIRST boot only
+            - ./sql:/docker-entrypoint-initdb.d:ro # schema.sql + seeds.sql auto-run on FIRST boot (alphabetical order)
 
     mailpit:
         image: axllent/mailpit

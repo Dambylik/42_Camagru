@@ -7,10 +7,13 @@ FROM php:8.2-apache
 # new PDO("mysql:...") throws "could not find driver."
 # GD is PHP's image library: create, resize, crop, and stack images on top of
 # each other.
-RUN apt-get update && apt-get install -y libpng-dev libjpeg-dev \
+RUN apt-get update && apt-get install -y libpng-dev libjpeg-dev msmtp \
     && docker-php-ext-configure gd --with-jpeg \
     && docker-php-ext-install pdo_mysql gd \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/msmtp /usr/sbin/sendmail
+
+COPY config/msmtp.conf /etc/msmtprc
 
 # Serve only public/ (keeps app/ source out of the web root).
 # All requests hit public/index.php?page=... — no rewrite module needed.

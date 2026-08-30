@@ -1,1 +1,4 @@
 .env
+public/uploads/*
+!public/uploads/.gitkeep
+og_web_camagru.pdf

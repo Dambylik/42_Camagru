@@ -21,7 +21,7 @@ class Router
 
         if (!isset($this->routes[$key])) {
             http_response_code(404);
-            echo '404 Not Found';
+            require __DIR__ . '/../views/404.php';
             return;
         }
 
