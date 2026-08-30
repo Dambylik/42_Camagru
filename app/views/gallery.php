@@ -235,6 +235,9 @@
         var rect = sentinel.getBoundingClientRect();
         if (rect.top <= window.innerHeight + 200) loadNext();
     });
+
+    // trigger immediately in case first page doesn't fill the viewport
+    loadNext();
 })();
 </script>
 

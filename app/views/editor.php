@@ -40,6 +40,7 @@
 
         <div class="card">
             <p style="margin-bottom:.5rem;font-size:.9rem;color:var(--muted)">Pick a cat overlay 🐾</p>
+            <p style="margin-bottom:.5rem;font-size:.8rem;color:var(--muted)">Double-click a sticker to remove it.</p>
             <?php if (empty($overlays)): ?>
                 <p style="color:var(--muted);font-size:.85rem">No overlays yet 😿</p>
             <?php else: ?>
@@ -233,6 +234,20 @@
         canvas.style.cursor = 'default';
     }
 
+    // ── Double-click to remove sticker ───────────────────────────────────────
+    function onDblClick(e) {
+        if (frozen) return;
+        const { x, y } = canvasXY(e);
+        for (let i = stickers.length - 1; i >= 0; i--) {
+            if (inSticker(stickers[i], x, y)) {
+                stickers.splice(i, 1);
+                active = null;
+                return;
+            }
+        }
+    }
+
+    canvas.addEventListener('dblclick', onDblClick);
     canvas.addEventListener('mousedown',  onDown);
     canvas.addEventListener('mousemove',  onMove);
     canvas.addEventListener('mousemove',  onHover);
