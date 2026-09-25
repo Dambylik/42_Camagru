@@ -120,8 +120,15 @@ class EditorController
 
         $filename = bin2hex(random_bytes(16)) . '.png';
         $savePath = self::UPLOAD_DIR . $filename;
+        if (!is_dir(self::UPLOAD_DIR) || !is_writable(self::UPLOAD_DIR)) {
+            imagedestroy($out);
+            $this->editorError('Upload directory is not writable.');
+        }
         imagesavealpha($out, true);
-        imagepng($out, $savePath);
+        if (!imagepng($out, $savePath)) {
+            imagedestroy($out);
+            $this->editorError('Could not save the image.');
+        }
         imagedestroy($out);
 
         Image::create($_SESSION['user_id'], $filename);

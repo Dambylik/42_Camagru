@@ -17,7 +17,7 @@ services:
             - mailpit
 
     db:  
-        image: mariadb:11 # 3306 — the database's default internal port
+        image: docker.io/library/mariadb:11 # 3306 — the database's default internal port
         environment:
             MYSQL_DATABASE: ${MYSQL_DATABASE}
             MYSQL_USER: ${MYSQL_USER}
@@ -28,7 +28,7 @@ services:
             - ./sql:/docker-entrypoint-initdb.d:ro # schema.sql + seeds.sql auto-run on FIRST boot (alphabetical order)
 
     mailpit:
-        image: axllent/mailpit
+        image: docker.io/axllent/mailpit:latest
         ports:
             - "8025:8025" # Mailpit web UI, # SMTP is on port 1025 inside the network; web sends here, you read at :8025
     
