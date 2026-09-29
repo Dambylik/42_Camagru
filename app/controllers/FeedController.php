@@ -6,7 +6,8 @@ require_once __DIR__ . '/../core/Mailer.php';
 
 class FeedController
 {
-    private const PER_PAGE = 5;
+    private const PER_PAGE    = 5;
+    private const MAX_COMMENT = 500; // same as maxlength="500" in the HTML
 
     public function index(): void
     {
@@ -52,9 +53,12 @@ class FeedController
         }
         Csrf::verify();
         $imageId = (int) ($_POST['image_id'] ?? 0);
-        if ($imageId > 0) {
-            Image::toggleLike($_SESSION['user_id'], $imageId);
+        // Image may have been deleted meanwhile: without this check the
+        // foreign key rejects the INSERT and PHP crashes with a 500.
+        if (!Image::findById($imageId)) {
+            echo json_encode(['error' => 'not found']); exit;
         }
+        Image::toggleLike($_SESSION['user_id'], $imageId);
         echo json_encode([
             'liked' => Image::hasLiked($_SESSION['user_id'], $imageId),
             'count' => Image::likeCount($imageId),
@@ -72,14 +76,19 @@ class FeedController
         $imageId = (int) ($_POST['image_id'] ?? 0);
         $content = trim($_POST['content'] ?? '');
 
-        if ($imageId <= 0 || $content === '') {
+        // maxlength in HTML is easy to bypass, so the server re-checks it
+        if ($content === '' || mb_strlen($content) > self::MAX_COMMENT) {
             echo json_encode(['error' => 'invalid']); exit;
+        }
+        $image = Image::findById($imageId);
+        if (!$image) {
+            echo json_encode(['error' => 'not found']); exit;
         }
 
         Comment::create($imageId, $_SESSION['user_id'], $content);
 
-        $image = Image::findById($imageId);
-        if ($image && $image['user_id'] !== $_SESSION['user_id']) {
+        // Notify the author (not when commenting on your own image)
+        if ((int) $image['user_id'] !== (int) $_SESSION['user_id']) {
             $owner = User::findById($image['user_id']);
             if ($owner && $owner['notify_on_comment']) {
                 $url = rtrim(getenv('APP_URL'), '/') . '/index.php?page=home#img-' . $imageId;
@@ -87,7 +96,7 @@ class FeedController
                     $owner['email'],
                     'New comment on your Camagrrru image',
                     "Hi {$owner['username']},\n\n"
-                    . htmlspecialchars($_SESSION['username'])
+                    . $_SESSION['username']
                     . " commented on your image:\n\n\"{$content}\"\n\nView it: {$url}"
                 );
             }

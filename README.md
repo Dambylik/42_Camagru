@@ -2,6 +2,8 @@
 
 A webcam/photo editing web app. PHP only, no frameworks, no composer, no npm. Docker for one-command deploy.
 
+📘 **New to the code? Read [LEARNING.md](LEARNING.md)** — every concept, why it was chosen, and best practices.
+
 ## Run it
 
 ```bash
@@ -95,9 +97,9 @@ Makefile              shortcuts
 - Upload a photo instead of webcam — loads onto canvas client-side
 - Pick cat stickers from the overlay panel — click to add, multiple stickers supported
 - Each sticker is **draggable** and **resizable from any corner**
-- Capture sends base64 + sticker positions to server
+- Capture sends the raw photo (base64) + sticker positions — the browser never merges them
 - Server-side GD compositing: resizes base to 600×600, composites each sticker at user-specified position/size
-- Zero stickers, one sticker, or many — all handled
+- At least one sticker is required (button disabled + re-checked on the server); many are supported
 - Thumbnail grid of your own images with delete (ownership enforced server-side)
 
 ## Security

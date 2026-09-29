@@ -9,4 +9,22 @@ if (file_exists($env)) {
     }
 }
 
-session_start();
+// Never show PHP errors/stack traces to visitors (they leak paths & SQL).
+// They still go to the server log: `make logs` to read them.
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
+// Any uncaught exception (DB down, bug...) -> log it + polite 500 page.
+set_exception_handler(function (Throwable $e) {
+    error_log($e);
+    http_response_code(500);
+    $message = 'Something went wrong. Please try again later.';
+    require __DIR__ . '/../app/views/error.php';
+});
+
+// HttpOnly: JavaScript can't read the session cookie (limits XSS damage).
+// SameSite=Lax: browser doesn't send it on cross-site POSTs (extra CSRF shield).
+session_start([
+    'cookie_httponly' => true,
+    'cookie_samesite' => 'Lax',
+]);

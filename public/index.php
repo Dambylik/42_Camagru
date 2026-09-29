@@ -29,7 +29,6 @@ $router->post('comment-ajax', ['FeedController', 'commentAjax']);
 // Editor
 $router->get('editor',        ['EditorController', 'show']);
 $router->post('capture',      ['EditorController', 'capture']);
-$router->post('upload',       ['EditorController', 'upload']);
 $router->post('delete-image', ['EditorController', 'delete']);
 
 $page = $_GET['page'] ?? 'home';

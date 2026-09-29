@@ -10,8 +10,8 @@ services:
             DB_NAME: ${MYSQL_DATABASE}
             DB_USER: ${MYSQL_USER}
             DB_PASSWORD: ${MYSQL_PASSWORD}
-            APP_URL: ${APP_URL}
-            MAIL_FROM: ${MAIL_FROM}
+            APP_URL: ${APP_URL:-http://localhost:8000}
+            MAIL_FROM: ${MAIL_FROM:-noreply@camagru.local}
         depends_on:
             - db
             - mailpit

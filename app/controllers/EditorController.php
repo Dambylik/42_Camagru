@@ -18,7 +18,11 @@ class EditorController
         require __DIR__ . '/../views/editor.php';
     }
 
-    // Called when user clicks "Capture" — receives base64 PNG from canvas
+    // Called when user clicks "Capture".
+    // Receives the raw photo (webcam frame or uploaded file, drawn on a canvas
+    // and exported as base64 PNG) + the list of stickers with their positions.
+    // Uploads also come through here: the browser re-encodes them as PNG, and
+    // GD decoding below rejects anything that is not a real image.
     public function capture(): void
     {
         $this->requireLogin();
@@ -28,35 +32,32 @@ class EditorController
         $stickers = json_decode($_POST['stickers'] ?? '[]', true);
         if (!is_array($stickers)) $stickers = [];
 
-        if (!preg_match('/^data:image\/png;base64,/', $dataUrl)) {
+        // Subject V.4: an overlay is mandatory. The disabled button is only UX,
+        // this is the real check (never trust the client).
+        if (count($stickers) === 0) {
+            $this->editorError('Pick at least one overlay first.');
+        }
+
+        $prefix = 'data:image/png;base64,';
+        if (!str_starts_with($dataUrl, $prefix)) {
             $this->editorError('Invalid image data.');
         }
-        $raw  = base64_decode(substr($dataUrl, strpos($dataUrl, ',') + 1));
+        $raw = base64_decode(substr($dataUrl, strlen($prefix)), true); // true = strict
+        if ($raw === false || strlen($raw) > self::MAX_BYTES) {
+            $this->editorError('Invalid or too large image (max 5 MB).');
+        }
+
+        // Read width/height BEFORE decoding: a tiny file can claim to be
+        // 20000×20000 px and eat all the memory ("decompression bomb").
+        $info = @getimagesizefromstring($raw);
+        if (!$info || $info[0] > 4000 || $info[1] > 4000) {
+            $this->editorError('Image must be a valid picture, max 4000×4000 px.');
+        }
+
         $base = @imagecreatefromstring($raw);
         if (!$base) $this->editorError('Could not decode captured image.');
 
         $this->composite($base, $stickers);
-    }
-
-    // Called when user uploads a file instead of using webcam
-    public function upload(): void
-    {
-        $this->requireLogin();
-        Csrf::verify();
-
-        $file = $_FILES['photo'] ?? null;
-        if (!$file || $file['error'] !== UPLOAD_ERR_OK) $this->editorError('Upload failed.');
-        if ($file['size'] > self::MAX_BYTES) $this->editorError('File too large (max 5 MB).');
-
-        $info = @getimagesize($file['tmp_name']);
-        if (!$info || !in_array($info['mime'], ['image/jpeg', 'image/png', 'image/gif', 'image/webp'], true)) {
-            $this->editorError('Only JPEG, PNG, GIF or WebP images are accepted.');
-        }
-
-        $base = @imagecreatefromstring(file_get_contents($file['tmp_name']));
-        if (!$base) $this->editorError('Could not read uploaded image.');
-
-        $this->composite($base, []);
     }
 
     public function delete(): void
@@ -68,7 +69,7 @@ class EditorController
         $image   = Image::findById($imageId);
 
         // Ownership check — never trust the client
-        if (!$image || $image['user_id'] !== $_SESSION['user_id']) {
+        if (!$image || (int) $image['user_id'] !== (int) $_SESSION['user_id']) {
             http_response_code(403);
             exit('Forbidden.');
         }
@@ -95,6 +96,7 @@ class EditorController
         imagedestroy($base);
 
         // Composite each sticker in order
+        $applied = 0;
         if (!empty($stickers)) {
             $allOverlays = Image::allOverlays();
             $overlayMap  = [];
@@ -102,11 +104,13 @@ class EditorController
 
             imagealphablending($out, true);
             foreach ($stickers as $s) {
+                if (!is_array($s)) continue;
+                // Clamp to the 600×600 canvas: client values are untrusted
                 $id  = (int) ($s['id'] ?? 0);
-                $ovX = (int) ($s['x']  ?? 0);
-                $ovY = (int) ($s['y']  ?? 0);
-                $ovW = (int) ($s['w']  ?? 600);
-                $ovH = (int) ($s['h']  ?? 600);
+                $ovX = $this->clamp($s['x'] ?? 0,   0, 600);
+                $ovY = $this->clamp($s['y'] ?? 0,   0, 600);
+                $ovW = $this->clamp($s['w'] ?? 600, 1, 600);
+                $ovH = $this->clamp($s['h'] ?? 600, 1, 600);
 
                 if (!isset($overlayMap[$id])) continue;
                 $path = __DIR__ . '/../../public/overlays/' . basename($overlayMap[$id]['path']);
@@ -115,7 +119,14 @@ class EditorController
                 if (!$over) continue;
                 imagecopyresampled($out, $over, $ovX, $ovY, 0, 0, $ovW, $ovH, imagesx($over), imagesy($over));
                 imagedestroy($over);
+                $applied++;
             }
+        }
+
+        // All sticker ids were fake/unknown -> no overlay -> refuse (subject V.4)
+        if ($applied === 0) {
+            imagedestroy($out);
+            $this->editorError('Pick at least one valid overlay.');
         }
 
         $filename = bin2hex(random_bytes(16)) . '.png';
@@ -136,6 +147,11 @@ class EditorController
 
         header('Location: index.php?page=editor');
         exit;
+    }
+
+    private function clamp(mixed $v, int $min, int $max): int
+    {
+        return max($min, min($max, (int) $v));
     }
 
     private function requireLogin(): void

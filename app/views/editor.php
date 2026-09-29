@@ -112,7 +112,14 @@
         img.src = imgEl.src;
         img.onload = () => {
             stickers.push({ id, img, x: 100, y: 100, w: 400, h: 400 });
+            updateCaptureBtn();
         };
+    }
+
+    // Subject V.4: capture stays disabled until a camera/photo is ready
+    // AND at least one overlay is selected. (The server checks this again.)
+    function updateCaptureBtn() {
+        btnCapture.disabled = !(hasMedia && stickers.length > 0);
     }
 
     // ── Draw ─────────────────────────────────────────────────────────────────
@@ -242,6 +249,7 @@
             if (inSticker(stickers[i], x, y)) {
                 stickers.splice(i, 1);
                 active = null;
+                updateCaptureBtn();
                 return;
             }
         }
@@ -278,7 +286,7 @@
                 uploadedBase = img;
                 frozen = false;
                 hasMedia = true;
-                btnCapture.disabled = false;
+                updateCaptureBtn();
                 loop();
             };
             img.src = ev.target.result;
@@ -305,7 +313,7 @@
                 video.srcObject = stream;
                 video.addEventListener('playing', () => {
                     hasMedia = true;
-                    btnCapture.disabled = false;
+                    updateCaptureBtn();
                     loop();
                 });
             })
@@ -321,10 +329,10 @@
     btnCapture.addEventListener('click', () => {
         cancelAnimationFrame(animFrame);
         frozen = true;
-        // Final draw without handles
+        // Send ONLY the raw photo. The stickers are sent as positions and the
+        // server composites them (subject V.4: superposition is server-side).
         ctx.clearRect(0, 0, SIZE, SIZE);
         ctx.drawImage(uploadedBase || video, 0, 0, SIZE, SIZE);
-        stickers.forEach(s => ctx.drawImage(s.img, s.x, s.y, s.w, s.h));
 
         document.getElementById('image_data').value   = canvas.toDataURL('image/png');
         document.getElementById('stickers_data').value = JSON.stringify(
@@ -338,7 +346,7 @@
     // ── Retake ────────────────────────────────────────────────────────────────
     btnRetake.addEventListener('click', () => {
         frozen = false; uploadedBase = null; hasMedia = false; stickers = []; active = null;
-        btnCapture.disabled = true;
+        updateCaptureBtn();
         btnCapture.style.display = 'inline-block';
         btnRetake.style.display  = 'none';
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -347,7 +355,7 @@
                     video.srcObject = stream;
                     video.addEventListener('playing', function onPlaying() {
                         video.removeEventListener('playing', onPlaying);
-                        hasMedia = true; btnCapture.disabled = false; loop();
+                        hasMedia = true; updateCaptureBtn(); loop();
                     });
                 });
         }
