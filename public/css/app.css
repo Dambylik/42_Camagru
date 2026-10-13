@@ -112,6 +112,11 @@ input:focus, textarea:focus {
     box-shadow: 0 0 0 3px rgba(224,96,126,.12);
 }
 small { color: var(--muted); font-size: .8rem; }
+.form-help {
+    display: block;
+    margin-bottom: 1.25rem;
+    line-height: 1.5;
+}
 
 /* ── Buttons ── */
 .btn {

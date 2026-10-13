@@ -25,9 +25,13 @@ The app container has no host-published port. Only Nginx is exposed at localhost
 - `config/nginx.Dockerfile`, `config/nginx.conf`: Nginx image and routing.
 - `Dockerfile`, `config/docker-entrypoint.sh`: Python image and runtime user.
 - `backend/server.py`: standard-library WSGI entry point, form parsing and request limits.
-- `backend/application.py`: application routes and database operations.
-- `backend/views.py`: escaped HTML rendering.
-- `backend/security.py`: password validation/hashing, sessions and CSRF.
+- `backend/application.py`: front controller, routes, sessions and transactions.
+- `backend/controllers/`: account, gallery and editor request handling.
+- `backend/models/`: user, image, comment, overlay and session database queries.
+- `backend/views/`: account, profile, gallery and editor HTML, with shared escaping/form helpers.
+- `backend/security.py`: password hashing and session lifecycle.
+- `backend/controllers/base.py`: shared input validation.
+- `backend/http.py`: request state and response helpers.
 - `backend/db.py`: parameterized SQL access.
 - `backend/imaging.py`: server-side image validation and overlay composition.
 - `backend/mail.py`: SMTP email delivery.
