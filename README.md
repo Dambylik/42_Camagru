@@ -5,13 +5,20 @@ Requirements reference: `en.subject.camagru.pdf`, Version 4.1.
 
 ## Start
 
+For a new checkout, configure the environment once:
+
+```sh
+cp .env.example .env
+```
+
+Edit `.env` and replace both example passwords with your own values. If `.env`
+already exists, keep it; do not overwrite credentials used by an existing database.
 Start Docker Desktop, then run `make up` from this folder.
 Open http://localhost:8000. Account-confirmation, reset and comment emails can be
 inspected in Mailpit at http://localhost:8025.
 
-A missing `.env` is generated with random database credentials using Python 3 on the
-host. Credentials remain in the ignored `.env`; never commit them. Existing `.env`
-settings are used as-is. No npm or Composer is required.
+Credentials remain in the ignored `.env`; never commit them. `make up` requires this
+file and does not generate credentials. No host Python, npm or Composer is required.
 
 ## Request flow
 
@@ -20,28 +27,28 @@ Nginx serves CSS, JavaScript, overlays and uploaded PNGs directly. Python handle
 accounts, gallery queries, comments, likes and server-side image composition.
 The app container has no host-published port. Only Nginx is exposed at localhost:8000.
 
-## Files
+## Small code structure
 
-- `config/nginx.Dockerfile`, `config/nginx.conf`: Nginx image and routing.
-- `Dockerfile`, `config/docker-entrypoint.sh`: Python image and runtime user.
-- `backend/server.py`: standard-library WSGI entry point, form parsing and request limits.
-- `backend/application.py`: front controller, routes, sessions and transactions.
-- `backend/controllers/`: account, gallery and editor request handling.
-- `backend/models/`: user, image, comment, overlay and session database queries.
-- `backend/views/`: account, profile, gallery and editor HTML, with shared escaping/form helpers.
-- `backend/security.py`: password hashing and session lifecycle.
-- `backend/controllers/base.py`: shared input validation.
-- `backend/http.py`: request state and response helpers.
-- `backend/db.py`: parameterized SQL access.
-- `backend/imaging.py`: server-side image validation and overlay composition.
-- `backend/mail.py`: SMTP email delivery.
-- `public/`: browser assets and overlay images.
-- `sql/schema.sql`, `sql/seeds.sql`: initialize a fresh database, including sessions.
+There are seven application files, using ordinary functions:
 
-There are no source/test bind mounts, PHP routes or migration compatibility helpers.
-Rebuild after changing source: `make up`.
-The database health check ensures its initial schema is ready before Python starts;
-there is no web health endpoint or web health check.
+- `backend/server.py`: reads HTTP requests and calls the application through WSGI.
+- `backend/app.py`: handles registration, login, profile, gallery and editor actions.
+- `backend/database.py`: connects to MariaDB and contains parameterized SQL queries.
+- `backend/views.py`: creates the HTML pages and escapes displayed values.
+- `backend/security.py`: validates fields, hashes passwords and manages sessions.
+- `backend/imaging.py`: checks and combines images on the server.
+- `backend/mail.py`: sends confirmation, reset and notification emails.
+
+The request information is a dictionary, not a custom Request class. There are no
+controller/model classes, inheritance hierarchy or extra subfolders. MVC responsibilities
+remain logical: database functions are the model, page-action functions are controllers,
+and HTML functions are views. The subject suggests MVC but does not require folder names.
+
+Follow a request: `server.py` → `app.py` → database/security/image/mail functions → `views.py`.
+
+`config/nginx.conf` configures the public web server. `sql/schema.sql` and `sql/seeds.sql`
+initialize a new database. There are no source/test bind mounts or migration helpers.
+Rebuild after source changes: `make up`. The database health check waits for initialization.
 
 ## Subject functionality
 

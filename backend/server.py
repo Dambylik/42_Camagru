@@ -1,11 +1,10 @@
-"""WSGI entry point behind Nginx; no web framework."""
-import os
+"""Web Server Gateway Interface entry point behind Nginx; no web framework."""
 import time
 import traceback
 from http import HTTPStatus
 from urllib.parse import parse_qs
 from wsgiref.simple_server import make_server, WSGIRequestHandler
-from .application import Request, handle
+from .app import handle
 
 MAX_BODY = 8 * 1024 * 1024
 rates = {}
@@ -49,9 +48,8 @@ def dispatch(environ):
         if len(raw) != length:
             raise ValueError('Incomplete request')
         data = parameters(raw.decode('utf-8'))
-    request = Request(method,query.get('page','home'),query,data,
-                      environ.get('HTTP_COOKIE',''),environ.get('HTTP_ORIGIN',''))
-    return handle(request)
+    return handle(method, query.get('page', 'home'), query, data,
+                  environ.get('HTTP_COOKIE', ''), environ.get('HTTP_ORIGIN', ''))
 
 
 def application(environ, start_response):

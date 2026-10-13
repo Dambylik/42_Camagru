@@ -28,6 +28,7 @@ clean: down       ## stop containers and drop volumes (DB data lost)
 fclean: clean     ## clean + remove built images
 	docker compose down -v --rmi local
 
-# Generate local credentials on first run. Existing .env is preserved.
+# Configure .env manually once; never generate or overwrite credentials.
 .env:
-	python3 config/create_env.py
+	@echo "Missing .env: copy .env.example to .env and configure your database credentials."
+	@exit 1

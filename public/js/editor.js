@@ -216,6 +216,7 @@
                 uploadedBase = img;
                 frozen = false;
                 hasMedia = true;
+                document.getElementById('camera-placeholder').style.display = 'none';
                 updateCaptureBtn();
                 loop();
             };
@@ -228,6 +229,7 @@
     const previewSrc = document.getElementById("canvas-preview").dataset.preview || null;
 
     if (previewSrc) {
+        document.getElementById('camera-placeholder').style.display = 'none';
         const img = new Image();
         img.onload = () => { frozen = true; ctx.drawImage(img, 0, 0, SIZE, SIZE); };
         img.src = previewSrc;
@@ -239,14 +241,15 @@
                 video.srcObject = stream;
                 video.addEventListener('playing', () => {
                     hasMedia = true;
+                document.getElementById('camera-placeholder').style.display = 'none';
                     updateCaptureBtn();
                     loop();
                 });
             })
             .catch(() => {
                 document.getElementById('preview-wrap').insertAdjacentHTML(
-                    'beforeend',
-                    '<p style="color:var(--muted);padding:.5rem">Camera not available — use upload instead.</p>'
+                    'afterend',
+                    '<p class="editor-help" role="status">Camera not available — choose a photo below.</p>'
                 );
             });
     }
@@ -281,7 +284,8 @@
                     video.srcObject = stream;
                     video.addEventListener('playing', function onPlaying() {
                         video.removeEventListener('playing', onPlaying);
-                        hasMedia = true; updateCaptureBtn(); loop();
+                        hasMedia = true;
+                document.getElementById('camera-placeholder').style.display = 'none'; updateCaptureBtn(); loop();
                     });
                 }).catch(() => { hasMedia = false; updateCaptureBtn(); });
         }

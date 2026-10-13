@@ -1,6 +1,0 @@
-"""Profile HTML rendering."""
-from .common import e, field, form, PASSWORD, PASSWORD_HELP, USER_ATTRS
-
-def profile(user, token):
-    sections = [('Username', 'username', field('username', 'Username', value=user['username'], attrs=USER_ATTRS), 'Update username'), ('Email', 'email', field('email', 'Email', 'email', user['email'], 'required maxlength="255"') + field('current_password', 'Current password', 'password', attrs='required') + '<p>Your current email stays active until you confirm the new address.</p>', 'Verify new email'), ('Password', 'password', field('current_password', 'Current password', 'password', attrs='required') + field('new_password', 'New password', 'password', attrs=PASSWORD) + PASSWORD_HELP, 'Update password'), ('Notifications', 'notify', '<label><input type="checkbox" name="notify_on_comment" value="1" ' + ('checked' if user['notify_on_comment'] else '') + '> Email me when someone comments on my image</label>', 'Save preference')]
-    return '<h1>Edit profile</h1>' + ''.join((f'<section class="profile-section card"><h2>{title}</h2>' + form('profile', token, content, button, f'<input type="hidden" name="action" value="{action}">') + '</section>' for title, action, content, button in sections))
