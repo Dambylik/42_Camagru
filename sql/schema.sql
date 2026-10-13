@@ -72,3 +72,13 @@ CREATE TABLE likes (
     CONSTRAINT fk_likes_image FOREIGN KEY (image_id)
         REFERENCES images (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Server-side login sessions, separate from browser cookies.
+CREATE TABLE sessions (
+    id CHAR(64) NOT NULL PRIMARY KEY,
+    user_id INT UNSIGNED DEFAULT NULL,
+    session_version INT UNSIGNED DEFAULT NULL,
+    csrf_token CHAR(64) NOT NULL,
+    expires_at BIGINT NOT NULL,
+    INDEX idx_session_expiry (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

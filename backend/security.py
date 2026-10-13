@@ -23,7 +23,6 @@ def password_hash(password):
 
 def password_matches(password, hashed):
     try:
-        # PHP bcrypt hashes use $2y$; Python bcrypt supports that prefix too.
         return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('ascii'))
     except (ValueError, UnicodeError):
         return False

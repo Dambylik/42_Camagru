@@ -1,6 +1,6 @@
 # Camagru — thin wrapper over docker compose. `make` brings the stack up.
 .DEFAULT_GOAL := up
-.PHONY: up build down re logs ps db clean fclean test
+.PHONY: up build down re logs ps db clean fclean
 
 up: .env          ## build if needed and start (app :8000, mailpit :8025)
 	docker compose up --build -d
@@ -18,9 +18,6 @@ logs:             ## follow all container logs
 
 ps:               ## show container status
 	docker compose ps
-
-test:             ## run integration tests with temporary accounts (automatically cleaned)
-	docker compose exec -T web python /app/tests/integration.py
 
 db:               ## open a MariaDB shell in the db container
 	docker compose exec db sh -c 'exec mariadb -u"$$MYSQL_USER" -p"$$MYSQL_PASSWORD" "$$MYSQL_DATABASE"'

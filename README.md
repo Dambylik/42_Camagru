@@ -1,100 +1,86 @@
 # Camagrrru
 
-Framework-free Python 3.10 application following `en.subject.camagru.pdf`, Version 4.1.
-The 2018 evaluation sheet is historical reference only.
+Python 3.10 backend with Nginx, MariaDB and native HTML/CSS/JavaScript.
+Requirements reference: `en.subject.camagru.pdf`, Version 4.1.
 
 ## Start
 
-Install/start Docker Desktop, then run from this folder:
+Start Docker Desktop, then run `make up` from this folder.
+Open http://localhost:8000. Account-confirmation, reset and comment emails can be
+inspected in Mailpit at http://localhost:8025.
 
-```sh
-docker desktop start
-make up
-```
+A missing `.env` is generated with random database credentials using Python 3 on the
+host. Credentials remain in the ignored `.env`; never commit them. Existing `.env`
+settings are used as-is. No npm or Composer is required.
 
-Open http://localhost:8000. Development emails appear at http://localhost:8025.
-`make up` builds the image and starts the Python web server, MariaDB and Mailpit.
-A missing `.env` is generated with random database passwords by `config/create_env.py`
-(Python 3 on the host). Existing credentials and persistent volumes are preserved.
-Copying `.env.example` is also possible, but replace its example passwords before startup.
-No npm or Composer installation is needed to run the application.
+## Request flow
 
-## Architecture
+Browser → Nginx (`web`) → Python WSGI application (`app`) → MariaDB (`db`).
+Nginx serves CSS, JavaScript, overlays and uploaded PNGs directly. Python handles
+accounts, gallery queries, comments, likes and server-side image composition.
+The app container has no host-published port. Only Nginx is exposed at localhost:8000.
 
-- `backend/server.py`: native HTTP server, request parsing, static-file allowlist, security headers and bounded concurrency.
-- `backend/application.py`: routes and application behavior.
-- `backend/views.py`: HTML rendering; all dynamic text is escaped.
-- `backend/db.py`: parameterized MariaDB queries; database failures raise exceptions.
-- `backend/security.py`: bcrypt passwords, input validation, database-backed sessions, CSRF tokens and session rotation.
-- `backend/imaging.py`: validates PNG data and composites overlays on the server using Pillow.
-- `backend/mail.py`: SMTP messages using Python's standard library.
-- `backend/bootstrap.py`: creates the sessions table and adds missing account-security columns without dropping data.
-- `public/js/`: native browser JavaScript for the editor and AJAX gallery.
-- `public/css/`, `public/overlays/`: the existing design and alpha-channel overlays.
-- `sql/schema.sql`, `sql/seeds.sql`: initialize a new MariaDB volume.
+## Files
 
-MariaDB stores users, images, comments, likes, overlay metadata and sessions. Uploaded PNGs
-are stored in the `uploads_data` volume. Existing PHP bcrypt accounts remain usable; users
-must log in again because Python uses its own session cookie. Old `index.php?page=...`
-links are handled by Python for compatibility; no PHP executable is involved.
+- `config/nginx.Dockerfile`, `config/nginx.conf`: Nginx image and routing.
+- `Dockerfile`, `config/docker-entrypoint.sh`: Python image and runtime user.
+- `backend/server.py`: standard-library WSGI entry point, form parsing and request limits.
+- `backend/application.py`: application routes and database operations.
+- `backend/views.py`: escaped HTML rendering.
+- `backend/security.py`: password validation/hashing, sessions and CSRF.
+- `backend/db.py`: parameterized SQL access.
+- `backend/imaging.py`: server-side image validation and overlay composition.
+- `backend/mail.py`: SMTP email delivery.
+- `public/`: browser assets and overlay images.
+- `sql/schema.sql`, `sql/seeds.sql`: initialize a fresh database, including sessions.
 
-Source changes in `backend/` are bind-mounted, but restart `web` to reload Python code:
+There are no source/test bind mounts, PHP routes or migration compatibility helpers.
+Rebuild after changing source: `make up`.
+The database health check ensures its initial schema is ready before Python starts;
+there is no web health endpoint or web health check.
 
-```sh
-docker compose restart web
-```
+## Subject functionality
 
-Refresh for CSS/JS edits. Rebuild for dependency, Dockerfile or packaged asset changes.
+Registration requires email confirmation. Reset links expire and are single-use.
+Authenticated users can change username, password, email and notification preference.
+Email changes require confirmation; security changes revoke older sessions.
+Logout is a one-click CSRF-protected button. The public gallery shows newest images
+first, five per page. Only logged-in users can like/comment. Comment emails are
+on by default and can be disabled. Capture requires a base image and at least one
+overlay per V.4. PHP-equivalent image composition takes place on the Python server.
+Users may delete only their own creations. Live preview and AJAX/infinite gallery
+loading are retained.
 
-## Subject requirements
+Runtime dependencies and their PHP equivalents:
 
-- Registration validates username, email and password in both browser and server.
-- A unique 24-hour email confirmation is needed before login.
-- Reset links expire after one hour and are consumed after use.
-- Profile supports username, password, confirmed email changes and notification preferences.
-- Logout is a one-click POST button with CSRF protection on all normal application pages.
-- The public gallery orders images newest first and paginates by five.
-- Only authenticated users can like/comment or access the editor.
-- Comment notification is enabled by default and can be disabled (including notifications for self-comments).
-- Capture requires a ready base image AND a selected overlay, per V.4; server checks independently.
-- Uploaded photos and webcam frames follow the same server-side composition path.
-- Only owners can delete their pictures.
-- CSRF, parameterized SQL, escaped HTML, bcrypt, secure random tokens, upload bounds and session revocation protect core flows.
-- Native JavaScript retains live overlay preview, drag/resize and infinite gallery loading as bonuses.
+| Python functionality | PHP equivalent |
+| --- | --- |
+| PyMySQL parameterized SQL and transactions | PDO parameterized SQL and transactions |
+| bcrypt hashing/verification | password_hash/password_verify |
+| Pillow image decoding, resizing, alpha composition, PNG output | GD imagecreatefromstring/imagecopyresampled/alpha blending/imagepng |
+| WSGI server | PHP built-in server; Nginx is explicitly allowed by the subject |
+| secrets random tokens / constant-time comparison | random_bytes/bin2hex/hash_equals |
+| hashlib | hash |
+| HTML escaping, regex, JSON, base64 | htmlspecialchars, preg_match, json_encode/decode, base64_decode |
+| SMTP delivery | mail with configured SMTP transport |
+| URL parsing, cookies, server-side sessions | parse_url/parse_str, setcookie, custom session storage |
+| Filesystem, time, basic collections and exceptions | PHP filesystem/time/array functions and exceptions |
 
-See `docs/php-equivalents.md` for dependency/function equivalents and
-`docs/evaluation.md` for a subject-based manual verification list.
-No claim of universal security or historical browser-version coverage is made; these need actual evaluation.
+PyMySQL uses parameterized DB-API queries, not MariaDB server-side PREPARE commands.
+No application query interpolates user input. The dependency mapping documents our
+interpretation of the subject's PHP-equivalent rule for evaluation.
 
-## Verification and diagnostics
+## Data and diagnostics
 
-```sh
-make test
-node tests/ui-regressions.cjs
-```
+`db_data` persists the database; `uploads_data` persists photos and is mounted read-only
+in Nginx. `public/overlays` is packaged into both images and is not deleted by volume resets.
 
-The Python integration test uses temporary accounts/photos in the running database and
-removes those fixtures afterward. Test emails remain in Mailpit; existing accounts and images
-are not deleted. Node is optional and used only for development regression tests.
-The test covers authentication, reset, CSRF, SQL injection, HTML escaping, preferences,
-server composition, ownership and pagination. Browser/SMTP checks are described separately.
+`make down` keeps data. `make clean`, `make fclean` and `make re` delete database/uploads.
+Only use those reset commands when that is intended.
 
-Routine web access logs are disabled. Unexpected exceptions are recorded privately in
-`/tmp/camagru-errors.log` inside `web` and return a generic error response to visitors.
-An empty console does not prove the app has no failures: check this file and HTTP responses too.
-
-```sh
-docker compose logs --since=2m web
-docker compose exec web sh -c 'test ! -s /tmp/camagru-errors.log'
-```
-
-Expected invalid input produces controlled 400/403 responses, not tracebacks. Docker/MariaDB
-infrastructure messages are separate from application errors. Native Linux AIO is disabled in
-MariaDB to avoid the unavailable io_uring path in Docker Desktop. Its memory-pressure facility
-can still be unavailable in that environment; this is not a Python error.
-
-`make down` keeps data. `make clean`, `make fclean` and `make re` DELETE the persistent
-volumes and therefore your database/uploads. They are explicit reset commands.
-
-The pre-migration working files were backed up at `/tmp/camagru-before-python.tar.gz`;
-that temporary archive is not submitted and excludes `.env` and `.git`.
+Application errors return generic responses and are recorded privately in
+`/tmp/camagru-errors.log` inside `app`. Nginx errors are recorded in
+`/tmp/camagru-nginx-errors.log` inside `web`. Routine access logs are disabled.
+Inspect these files and the browser console during evaluation; an empty console alone
+does not prove correctness. Real webcam hardware and Firefox compatibility remain to
+be verified manually on this host.
