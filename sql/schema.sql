@@ -1,6 +1,4 @@
--- Camagru schema. Auto-loaded by the MariaDB container on first boot
--- (mounted into /docker-entrypoint-initdb.d). To reload: docker compose down -v.
--- InnoDB everywhere so foreign keys are actually enforced.
+-- Camagru schema creates six tables
 
 CREATE TABLE users (
     id                 INT UNSIGNED  NOT NULL AUTO_INCREMENT,

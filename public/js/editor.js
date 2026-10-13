@@ -1,28 +1,27 @@
-
 (function () {
-    const video       = document.getElementById('webcam');
-    const canvas      = document.getElementById('canvas-preview');
-    const ctx         = canvas.getContext('2d');
-    const btnCapture  = document.getElementById('btn-capture');
-    const btnRetake   = document.getElementById('btn-retake');
-    const captureForm = document.getElementById('capture-form');
-    const thumbs      = document.querySelectorAll('.overlay-thumb');
-    const fileInput   = document.getElementById('file-input');
+    const video = document.getElementById("webcam");
+    const canvas = document.getElementById("canvas-preview");
+    const ctx = canvas.getContext("2d");
+    const btnCapture = document.getElementById("btn-capture");
+    const btnRetake = document.getElementById("btn-retake");
+    const captureForm = document.getElementById("capture-form");
+    const thumbs = document.querySelectorAll(".overlay-thumb");
+    const fileInput = document.getElementById("file-input");
 
     const SIZE = 600;
-    canvas.width  = SIZE;
+    canvas.width = SIZE;
     canvas.height = SIZE;
-    canvas.style.display = 'block';
+    canvas.style.display = "block";
 
-    let animFrame    = null;
-    let frozen       = false;
-    let hasMedia     = false;
+    let animFrame = null;
+    let frozen = false;
+    let hasMedia = false;
     let uploadedBase = null;
 
     // ── Multiple stickers ────────────────────────────────────────────────────
     // Each sticker: { id, img, x, y, w, h }
-    let stickers  = [];   // placed stickers
-    let active    = null; // index of sticker being dragged/resized
+    let stickers = []; // placed stickers
+    let active = null; // index of sticker being dragged/resized
 
     const HANDLE = 20;
 
@@ -52,17 +51,17 @@
     }
 
     function drawHandles(s, isActive) {
-        ctx.strokeStyle = isActive ? 'rgba(224,96,126,0.9)' : 'rgba(255,255,255,0.6)';
+        ctx.strokeStyle = isActive ? "rgba(224,96,126,0.9)" : "rgba(255,255,255,0.6)";
         ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 4]);
         ctx.strokeRect(s.x, s.y, s.w, s.h);
         ctx.setLineDash([]);
-        corners(s).forEach(c => {
-            ctx.fillStyle = '#fff';
-            ctx.fillRect(c.x - HANDLE/2, c.y - HANDLE/2, HANDLE, HANDLE);
-            ctx.strokeStyle = '#e0607e';
+        corners(s).forEach((c) => {
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(c.x - HANDLE / 2, c.y - HANDLE / 2, HANDLE, HANDLE);
+            ctx.strokeStyle = "#e0607e";
             ctx.lineWidth = 1.5;
-            ctx.strokeRect(c.x - HANDLE/2, c.y - HANDLE/2, HANDLE, HANDLE);
+            ctx.strokeRect(c.x - HANDLE / 2, c.y - HANDLE / 2, HANDLE, HANDLE);
         });
     }
 
@@ -75,18 +74,21 @@
     // ── Corner helpers ───────────────────────────────────────────────────────
     function corners(s) {
         return [
-            { x: s.x,       y: s.y       },
-            { x: s.x + s.w, y: s.y       },
-            { x: s.x,       y: s.y + s.h },
+            { x: s.x, y: s.y },
+            { x: s.x + s.w, y: s.y },
+            { x: s.x, y: s.y + s.h },
             { x: s.x + s.w, y: s.y + s.h },
         ];
     }
 
     function nearCorner(s, x, y) {
-        const c = corners(s).reduce((best, c) => {
-            const d = Math.hypot(c.x - x, c.y - y);
-            return d < best.d ? { c, d } : best;
-        }, { c: null, d: Infinity }).c;
+        const c = corners(s).reduce(
+            (best, c) => {
+                const d = Math.hypot(c.x - x, c.y - y);
+                return d < best.d ? { c, d } : best;
+            },
+            { c: null, d: Infinity },
+        ).c;
         return c && Math.hypot(c.x - x, c.y - y) <= HANDLE ? c : null;
     }
 
@@ -100,12 +102,18 @@
         const src = e.touches ? e.touches[0] : e;
         return {
             x: (src.clientX - r.left) * (SIZE / r.width),
-            y: (src.clientY - r.top)  * (SIZE / r.height)
+            y: (src.clientY - r.top) * (SIZE / r.height),
         };
     }
 
     // ── Drag state ───────────────────────────────────────────────────────────
-    let drag = null, dragOx = 0, dragOy = 0, anchorX = 0, anchorY = 0, resizeLeft = false, resizeTop = false;
+    let drag = null,
+        dragOx = 0,
+        dragOy = 0,
+        anchorX = 0,
+        anchorY = 0,
+        resizeLeft = false,
+        resizeTop = false;
 
     function onDown(e) {
         if (frozen) return;
@@ -116,7 +124,8 @@
             const s = stickers[i];
             const c = nearCorner(s, x, y);
             if (c) {
-                active = i; drag = 'resize';
+                active = i;
+                drag = "resize";
                 resizeLeft = c.x === s.x;
                 resizeTop = c.y === s.y;
                 anchorX = c.x === s.x ? s.x + s.w : s.x;
@@ -124,8 +133,10 @@
                 return;
             }
             if (inSticker(s, x, y)) {
-                active = i; drag = 'move';
-                dragOx = x - s.x; dragOy = y - s.y;
+                active = i;
+                drag = "move";
+                dragOx = x - s.x;
+                dragOy = y - s.y;
                 return;
             }
         }
@@ -138,32 +149,43 @@
         const { x, y } = canvasXY(e);
         const s = stickers[active];
         const min = 40;
-        if (drag === 'move') {
+        if (drag === "move") {
             s.x = Math.max(0, Math.min(SIZE - s.w, x - dragOx));
             s.y = Math.max(0, Math.min(SIZE - s.h, y - dragOy));
         } else {
-            const edgeX = resizeLeft ? Math.max(0, Math.min(anchorX - min, x))
-                                     : Math.min(SIZE, Math.max(anchorX + min, x));
-            const edgeY = resizeTop ? Math.max(0, Math.min(anchorY - min, y))
-                                    : Math.min(SIZE, Math.max(anchorY + min, y));
+            const edgeX = resizeLeft
+                ? Math.max(0, Math.min(anchorX - min, x))
+                : Math.min(SIZE, Math.max(anchorX + min, x));
+            const edgeY = resizeTop
+                ? Math.max(0, Math.min(anchorY - min, y))
+                : Math.min(SIZE, Math.max(anchorY + min, y));
             s.x = resizeLeft ? edgeX : anchorX;
             s.y = resizeTop ? edgeY : anchorY;
             s.w = Math.abs(edgeX - anchorX);
             s.h = Math.abs(edgeY - anchorY);
         }
-        canvas.style.cursor = drag === 'resize' ? 'nwse-resize' : 'grabbing';
+        canvas.style.cursor = drag === "resize" ? "nwse-resize" : "grabbing";
     }
 
-    function onUp() { drag = null; canvas.style.cursor = 'default'; }
+    function onUp() {
+        drag = null;
+        canvas.style.cursor = "default";
+    }
 
     function onHover(e) {
         if (frozen || drag) return;
         const { x, y } = canvasXY(e);
         for (let i = stickers.length - 1; i >= 0; i--) {
-            if (nearCorner(stickers[i], x, y)) { canvas.style.cursor = 'nwse-resize'; return; }
-            if (inSticker(stickers[i], x, y))  { canvas.style.cursor = 'grab'; return; }
+            if (nearCorner(stickers[i], x, y)) {
+                canvas.style.cursor = "nwse-resize";
+                return;
+            }
+            if (inSticker(stickers[i], x, y)) {
+                canvas.style.cursor = "grab";
+                return;
+            }
         }
-        canvas.style.cursor = 'default';
+        canvas.style.cursor = "default";
     }
 
     // ── Double-click to remove sticker ───────────────────────────────────────
@@ -180,43 +202,55 @@
         }
     }
 
-    canvas.addEventListener('dblclick', onDblClick);
-    canvas.addEventListener('mousedown',  onDown);
-    canvas.addEventListener('mousemove',  onMove);
-    canvas.addEventListener('mousemove',  onHover);
-    canvas.addEventListener('mouseup',    onUp);
-    canvas.addEventListener('mouseleave', onUp);
-    canvas.addEventListener('touchstart', onDown, { passive: false });
-    canvas.addEventListener('touchmove',  onMove, { passive: false });
-    canvas.addEventListener('touchend',   onUp);
+    canvas.addEventListener("dblclick", onDblClick);
+    canvas.addEventListener("mousedown", onDown);
+    canvas.addEventListener("mousemove", onMove);
+    canvas.addEventListener("mousemove", onHover);
+    canvas.addEventListener("mouseup", onUp);
+    canvas.addEventListener("mouseleave", onUp);
+    canvas.addEventListener("touchstart", onDown, { passive: false });
+    canvas.addEventListener("touchmove", onMove, { passive: false });
+    canvas.addEventListener("touchend", onUp);
 
     // ── Overlay selection — click adds a new sticker ──────────────────────────
-    thumbs.forEach(t => {
-        t.addEventListener('click', () => {
+    thumbs.forEach((t) => {
+        t.addEventListener("click", () => {
             if (!hasMedia) return;
-            addSticker(parseInt(t.dataset.id, 10), t.querySelector('img'));
+            addSticker(parseInt(t.dataset.id, 10), t.querySelector("img"));
         });
     });
 
     // ── File upload ───────────────────────────────────────────────────────────
-    fileInput.addEventListener('change', () => {
+    fileInput.addEventListener("change", () => {
         const file = fileInput.files[0];
         if (!file) return;
-        if (file.size > 5 * 1024 * 1024 || !/^image\/(png|jpeg|webp)$/.test(file.type)) {
-            alert('Choose a PNG, JPEG or WebP image up to 5 MB.'); return;
+        if (
+            file.size > 5 * 1024 * 1024 ||
+            !/^image\/(png|jpeg|webp)$/.test(file.type)
+        ) {
+            alert("Choose a PNG, JPEG or WebP image up to 5 MB.");
+            return;
         }
         const reader = new FileReader();
-        reader.onload = ev => {
+        reader.onload = (ev) => {
             const img = new Image();
-            img.onerror = () => { alert('Could not read this image.'); };
+            img.onerror = () => {
+                alert("Could not read this image.");
+            };
             img.onload = () => {
-                if (img.width > 4000 || img.height > 4000) { alert('Image must be at most 4000 × 4000 pixels.'); return; }
+                if (img.width > 4000 || img.height > 4000) {
+                    alert("Image must be at most 4000 × 4000 pixels.");
+                    return;
+                }
                 cancelAnimationFrame(animFrame);
-                if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
+                if (video.srcObject) {
+                    video.srcObject.getTracks().forEach((t) => t.stop());
+                    video.srcObject = null;
+                }
                 uploadedBase = img;
                 frozen = false;
                 hasMedia = true;
-                document.getElementById('camera-placeholder').style.display = 'none';
+                document.getElementById("camera-placeholder").style.display = "none";
                 updateCaptureBtn();
                 loop();
             };
@@ -226,36 +260,44 @@
     });
 
     // ── Webcam ────────────────────────────────────────────────────────────────
-    const previewSrc = document.getElementById("canvas-preview").dataset.preview || null;
+    const previewSrc =
+        document.getElementById("canvas-preview").dataset.preview || null;
 
     if (previewSrc) {
-        document.getElementById('camera-placeholder').style.display = 'none';
+        document.getElementById("camera-placeholder").style.display = "none";
         const img = new Image();
-        img.onload = () => { frozen = true; ctx.drawImage(img, 0, 0, SIZE, SIZE); };
+        img.onload = () => {
+            frozen = true;
+            ctx.drawImage(img, 0, 0, SIZE, SIZE);
+        };
         img.src = previewSrc;
-        btnCapture.style.display = 'none';
-        btnRetake.style.display  = 'inline-block';
+        btnCapture.style.display = "none";
+        btnRetake.style.display = "inline-block";
     } else if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
+        navigator.mediaDevices
+            .getUserMedia({ video: true })
+            .then((stream) => {
                 video.srcObject = stream;
-                video.addEventListener('playing', () => {
+                video.addEventListener("playing", () => {
                     hasMedia = true;
-                document.getElementById('camera-placeholder').style.display = 'none';
+                    document.getElementById("camera-placeholder").style.display =
+                        "none";
                     updateCaptureBtn();
                     loop();
                 });
             })
             .catch(() => {
-                document.getElementById('preview-wrap').insertAdjacentHTML(
-                    'afterend',
-                    '<p class="editor-help" role="status">Camera not available — choose a photo below.</p>'
-                );
+                document
+                    .getElementById("preview-wrap")
+                    .insertAdjacentHTML(
+                        "afterend",
+                        '<p class="editor-help" role="status">Camera not available, choose a photo below.</p>',
+                    );
             });
     }
 
     // ── Capture ───────────────────────────────────────────────────────────────
-    btnCapture.addEventListener('click', () => {
+    btnCapture.addEventListener("click", () => {
         cancelAnimationFrame(animFrame);
         frozen = true;
         // Send ONLY the raw photo. The stickers are sent as positions and the
@@ -263,31 +305,49 @@
         ctx.clearRect(0, 0, SIZE, SIZE);
         ctx.drawImage(uploadedBase || video, 0, 0, SIZE, SIZE);
 
-        document.getElementById('image_data').value   = canvas.toDataURL('image/png');
-        document.getElementById('stickers_data').value = JSON.stringify(
-            stickers.map(s => ({ id: s.id, x: Math.round(s.x), y: Math.round(s.y), w: Math.round(s.w), h: Math.round(s.h) }))
+        document.getElementById("image_data").value = canvas.toDataURL("image/png");
+        document.getElementById("stickers_data").value = JSON.stringify(
+            stickers.map((s) => ({
+                id: s.id,
+                x: Math.round(s.x),
+                y: Math.round(s.y),
+                w: Math.round(s.w),
+                h: Math.round(s.h),
+            })),
         );
-        btnCapture.style.display = 'none';
-        btnRetake.style.display  = 'inline-block';
+        btnCapture.style.display = "none";
+        btnRetake.style.display = "inline-block";
         captureForm.submit();
     });
 
     // ── Retake ────────────────────────────────────────────────────────────────
-    btnRetake.addEventListener('click', () => {
-        frozen = false; uploadedBase = null; hasMedia = false; stickers = []; active = null;
+    btnRetake.addEventListener("click", () => {
+        frozen = false;
+        uploadedBase = null;
+        hasMedia = false;
+        stickers = [];
+        active = null;
         updateCaptureBtn();
-        btnCapture.style.display = 'inline-block';
-        btnRetake.style.display  = 'none';
+        btnCapture.style.display = "inline-block";
+        btnRetake.style.display = "none";
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(stream => {
+            navigator.mediaDevices
+                .getUserMedia({ video: true })
+                .then((stream) => {
                     video.srcObject = stream;
-                    video.addEventListener('playing', function onPlaying() {
-                        video.removeEventListener('playing', onPlaying);
+                    video.addEventListener("playing", function onPlaying() {
+                        video.removeEventListener("playing", onPlaying);
                         hasMedia = true;
-                document.getElementById('camera-placeholder').style.display = 'none'; updateCaptureBtn(); loop();
+                        document.getElementById("camera-placeholder").style.display =
+                            "none";
+                        updateCaptureBtn();
+                        loop();
                     });
-                }).catch(() => { hasMedia = false; updateCaptureBtn(); });
+                })
+                .catch(() => {
+                    hasMedia = false;
+                    updateCaptureBtn();
+                });
         }
     });
 })();

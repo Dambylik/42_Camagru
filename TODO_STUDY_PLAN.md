@@ -1,233 +1,327 @@
-# Camagru — Build & Study Plan
+# Camagru — Study and Evaluation Plan
 
-A step-by-step to-do list to deliver Camagru, with a learning plan per step.
-Stack chosen to match the subject: **PHP (server) + plain HTML/CSS/JS (client) + MySQL/MariaDB + Docker Compose**.
-Rule to remember all the way through: **no errors/warnings in any console (server or client)**, **secrets in `.env` (gitignored)**, **no framework that isn't in the PHP standard library**, **CSS frameworks OK if they add no JS**.
+Current stack: **Python 3.10 + Nginx + MariaDB + Mailpit + native HTML/CSS/JavaScript + Docker Compose**.
+Requirements reference: `en.subject.camagru.pdf`, **Version 4.1**. The 2018
+`og_web_camagru.pdf` is useful for practice, but its PHP-specific rules must not
+replace the assigned subject.
 
-Legend for each step:
-- **Do** — the concrete task
-- **Learn** — concepts to study before/while doing it
-- **Check** — what to verify works / test manually
-- **Best practice** — the professional habit to build
+This is a learning plan for the existing application, not an instruction to rebuild
+it from scratch. Read one small part, explain it in your own words, then demonstrate it.
+A feature being implemented does not mean you can already explain it or that it has
+passed every evaluation check.
 
----
+- **Read:** the actual files to inspect.
+- **Understand:** the concept behind the code.
+- **Demonstrate:** a behavior or piece of evidence to show an evaluator.
+- **Question:** a self-check before moving on.
 
-## Phase 0 — Foundations & environment
+## Where we are now
 
-### 0.1 Set up the repo and Docker
-- **Do:** `git init` (already done). Create `docker-compose.yml` with 3 services: `web` (PHP + Apache or PHP built-in server), `db` (MySQL/MariaDB), optionally `mailpit` (fake SMTP for testing emails). One command deploy: `docker compose up`.
-- **Learn:** What a container/image is; `docker-compose.yml` structure (services, ports, volumes, environment, depends_on); how containers talk over the compose network by service name (`db`, not `localhost`).
-- **Check:** `docker compose up` starts everything; PHP page loads at `localhost:8000`; PHP can connect to `db`.
-- **Best practice:** Never bake credentials into the image. Pass DB creds via `environment:` from `.env`. Use named volumes so DB data survives restarts.
+We have discussed Makefile commands, images/containers, Compose services, build
+contexts, ports, volumes, database initialization, health checks and startup files.
+Revisit them when needed; do not treat discussion alone as proof of mastery.
 
-### 0.2 `.env` and secrets
-- **Do:** Create `.env` (DB name/user/password, app URL, SMTP settings, an app secret). Add `.env` to `.gitignore`. Commit a `.env.example` with empty/placeholder values.
-- **Learn:** Why secrets never go in git; how PHP reads env (`getenv()` / `$_ENV`); the difference between build-time and run-time config.
-- **Check:** `git status` never shows `.env`. Fresh clone + copy `.env.example` → `.env` boots the app.
-- **Best practice:** "Publicly stored credentials = automatic project failure" (subject). Rotate anything you accidentally commit.
+**Resume at Phase 2:** Python server startup and one request through WSGI.
+Explain what happens before studying registration or other application features.
 
-### 0.3 Project skeleton (MVC)
-- **Do:** Create folders: `public/` (single entry `index.php` = front controller), `app/controllers`, `app/models`, `app/views`, `app/core` (router, DB, helpers), `sql/` (schema), `config/`.
-- **Learn:** What MVC means (Model = data/DB, View = HTML output, Controller = request handling); the **front controller** pattern (all requests hit `index.php`, which routes).
-- **Check:** A hard-coded route like `/` renders a view through the controller→view path.
-- **Best practice:** Keep business logic out of views. Views only display data handed to them.
+## Architecture map
 
----
+### Starting the application
 
-## Phase 1 — Core plumbing
+```text
+Docker Desktop provides the Docker Engine
+    ↓
+make up → Makefile → docker compose up --build -d
+    ↓
+docker-compose.yml
+    ├── db: MariaDB image → initializes an empty database → health check succeeds
+    ├── mailpit: Mailpit image → starts the email receiver
+    ├── app: root Dockerfile → docker-entrypoint.sh → python -m backend.server
+    └── web: config/nginx.Dockerfile → starts Nginx using config/nginx.conf
+```
 
-### 1.1 Router
-- **Do:** Small router mapping `METHOD + path` → controller method (e.g. `GET /login`, `POST /login`). Point Apache/PHP to rewrite everything to `public/index.php`.
-- **Learn:** HTTP methods (GET vs POST), URL routing, `$_SERVER['REQUEST_METHOD']` and `REQUEST_URI`, Apache `mod_rewrite` or PHP built-in server routing.
-- **Check:** Unknown route returns a 404 page, not a crash.
-- **Best practice:** Route table in one place; controllers stay thin.
+`app` waits for a healthy database and a started Mailpit container. `web` depends on
+`app` being started; that dependency is not an application-readiness health check.
 
-### 1.2 Database connection (PDO)
-- **Do:** A `Database` class using **PDO** with prepared statements. Read creds from env.
-- **Learn:** **PDO vs mysqli**; why **prepared statements** prevent SQL injection; connection error handling; `PDO::ERRMODE_EXCEPTION`.
-- **Check:** A test query returns rows; wrong password fails gracefully (no stack trace to the user).
-- **Best practice:** **Never** concatenate user input into SQL. Always bind parameters. This is one of the mandatory security points.
+### Handling a request
 
-### 1.3 Database schema
-- **Do:** Write `sql/schema.sql`: tables `users`, `images`, `likes`, `comments`, `overlays` (superposable images). Auto-load on first DB boot.
-- **Learn:** Primary keys, foreign keys, indexes, `created_at` timestamps, one-to-many (user→images) and many-to-many (user↔likes) relationships, `UNIQUE` on email/username.
-- **Check:** Schema loads clean; foreign keys enforced; a like can't be duplicated by the same user on the same image (composite unique key).
-- **Best practice:** Model relationships in the DB, not in app code. Let the DB enforce uniqueness and referential integrity.
+```text
+Browser → localhost:8000 → Nginx in web:80
+    ├── CSS / JavaScript / allowed images → served directly by Nginx
+    └── /?page=... → Python in app:8000
+                         ↓
+                     server.py
+                         ↓
+                       app.py
+                         ↓
+           database / security / imaging / mail functions
+                         ↓
+                     views.py → response → Nginx → browser
+```
 
----
+### Seven main Python files
 
-## Phase 2 — Authentication & user features (V.2)
+| File | Responsibility |
+| --- | --- |
+| `backend/server.py` | WSGI server, HTTP parsing, request-size/rate checks, response delivery |
+| `backend/app.py` | Page actions, routing, authentication checks, transaction coordination |
+| `backend/database.py` | MariaDB connection and parameterized SQL functions |
+| `backend/views.py` | Shared layout, forms and HTML rendering with escaping |
+| `backend/security.py` | Input validation, bcrypt passwords, sessions and random tokens |
+| `backend/imaging.py` | Image decoding, validation and server-side overlay composition |
+| `backend/mail.py` | SMTP confirmation, reset and comment-notification emails |
 
-### 2.1 Sign up
-- **Do:** Registration form: email, username, password (with complexity rule). Store user with **hashed** password and an `is_verified = 0` flag + a random confirmation token.
-- **Learn:** `password_hash()` / `password_verify()` (bcrypt); password complexity validation (length + mix); server-side vs client-side validation (client is convenience, **server is the real gate**); `filter_var($email, FILTER_VALIDATE_EMAIL)`.
-- **Check:** Weak password rejected server-side even if you bypass the JS. Password never stored in plain text (look in DB). Duplicate email/username rejected.
-- **Best practice:** Validate and sanitize **every** input at the server boundary. Passwords: hash, never encrypt, never log.
+MVC is a separation of responsibilities here, not a collection of classes/folders:
+**model = database functions; controller = app actions; view = HTML functions**.
+There is no PHP entry point, custom Request class or controller inheritance hierarchy.
 
-### 2.2 Email confirmation
-- **Do:** On signup, email a unique link (`/confirm?token=...`). Clicking it sets `is_verified = 1`. Block login until verified.
-- **Learn:** Generating secure random tokens (`random_bytes()` + `bin2hex()`); sending mail from PHP (`mail()` or PHPMailer-as-library check — but subject wants stdlib equivalents; Mailpit for local testing); token expiry.
-- **Check:** Unverified user cannot log in. Token works once. Tampered token fails.
-- **Best practice:** Tokens must be unguessable (cryptographically random), single-use, and time-limited.
+## Phase 1 — Launch and configuration
 
-### 2.3 Login / logout / sessions
-- **Do:** Login by username+password → start a PHP session. Logout button on every page, one click, destroys session.
-- **Learn:** PHP sessions (`session_start()`, `$_SESSION`, `session_destroy()`); cookies; session fixation; why you regenerate the session ID on login (`session_regenerate_id(true)`).
-- **Check:** Wrong password fails. Logout works from any page. Protected pages redirect to login when logged out.
-- **Best practice:** Regenerate session ID at login. Set cookie flags `HttpOnly` (and `Secure` when on HTTPS).
+### 1.1 Makefile and Compose
 
-### 2.4 Password reset
-- **Do:** "Forgot password" → email a reset link with a token → form to set a new password.
-- **Learn:** Same token pattern as 2.2; don't reveal whether an email exists (avoid user enumeration).
-- **Check:** Reset link changes the password; old password stops working; token is single-use.
-- **Best practice:** Same neutral message whether or not the email exists.
+- **Read:** `Makefile`, `docker-compose.yml`.
+- **Understand:** `make up` is a shortcut; Compose defines the four services. `build`
+  builds custom images, while `image` selects existing images. `context: .` makes
+  project files available during image construction.
+- **Demonstrate:** run `make up`, then `docker compose ps`; identify each service.
+- **Question:** which service runs Python, and which receives the browser's request?
 
-### 2.5 Edit profile
-- **Do:** Logged-in user can change username, email, password.
-- **Learn:** CSRF protection (see 2.6) matters most here — a form that changes "private data."
-- **Check:** Changing email/username enforces uniqueness. Changing password re-hashes.
-- **Best practice:** Re-validate everything on update, not just on create.
+### 1.2 Environment and secrets
 
-### 2.6 CSRF protection (applies to ALL forms — do this now)
-- **Do:** Generate a CSRF token per session, embed it as a hidden field in every form, verify it on every POST.
-- **Learn:** **What CSRF is** (subject explicitly lists it — "Use an extern form to manipulate private data"); the synchronizer token pattern; SameSite cookies.
-- **Check:** A POST without/with a wrong token is rejected. Submitting your form from another origin fails.
-- **Best practice:** Every state-changing request (POST/PUT/DELETE) must carry and verify a CSRF token.
+- **Read:** `.env.example`, `.gitignore`, Compose's `environment` sections.
+- **Understand:** configure `.env` manually once. Compose supplies environment values
+  to containers; Python reads them with `os.environ`. There is no `.env` generator.
+  SMTP host/port are currently configured in Compose as `mailpit:1025`.
+- **Demonstrate:** use `git check-ignore .env`; explain the settings without displaying passwords.
+- **Question:** why must changing the application code not expose database credentials?
 
----
+For a new checkout only, copy `.env.example` to `.env` and replace its example passwords
+before `make up`. Preserve an existing `.env` rather than overwriting database credentials.
 
-## Phase 3 — Layout & responsive design (V.1)
+### 1.3 Dockerfiles and startup script
 
-### 3.1 Base layout
-- **Do:** Shared header / main / footer template. Header shows login/logout/profile depending on auth state.
-- **Learn:** Template partials in PHP (`include`), semantic HTML (`<header> <main> <footer> <nav>`).
-- **Check:** Every page has header/main/footer; nav reflects auth state.
-- **Best practice:** One layout, pages fill the `main`. Don't repeat the header in every file.
+- **Read:** `Dockerfile`, `config/nginx.Dockerfile`, `config/docker-entrypoint.sh`.
+- **Understand:** `FROM`, `WORKDIR`, `COPY`, `RUN`, `ENV`, `EXPOSE`, `ENTRYPOINT`;
+  image-build instructions versus container startup. The entrypoint prepares uploads
+  permissions and starts Python as the `camagru` user.
+- **Demonstrate:** trace `ENTRYPOINT` to `python -m backend.server`.
+- **Question:** does `COPY` run when a browser requests a page?
 
-### 3.2 Responsive CSS
-- **Do:** Make it work on mobile and small screens. Editing page follows the Figure V.1 layout (main + side).
-- **Learn:** The **viewport meta tag**, CSS media queries, Flexbox/Grid, mobile-first CSS. A CSS framework (e.g. a classless one, or Bootstrap CSS-only) is allowed **only if it adds no JS**.
-- **Check:** Resize the browser narrow — layout adapts, nothing overflows, side section stacks on mobile.
-- **Best practice:** Mobile-first; test at real breakpoints; relative units (`rem`, `%`, `fr`) over fixed pixels.
+### 1.4 Ports, volumes and startup order
 
----
+- **Read:** Compose's `ports`, `volumes`, `depends_on` and database health check.
+- **Understand:** host port 8000 maps to Nginx port 80. Python port 8000 and MariaDB
+  port 3306 are internal. Mailpit's viewer is at localhost:8025; SMTP uses internal
+  port 1025. Services reach each other by name, not their own `localhost`.
+- **Demonstrate:** list uploads with `docker compose exec web ls -lah /usr/share/nginx/html/uploads`.
+- **Question:** why does Python mount uploads writable while Nginx mounts them read-only?
 
-## Phase 4 — Editing features (V.4) — the heart of the project
+`db_data` stores database files. `uploads_data` stores photos. Docker Desktop manages
+named volumes inside its Linux VM. Ordinary restarts keep data. `make clean`,
+`make fclean` and `make re` delete persistent data; they are reset commands.
 
-### 4.1 Access control
-- **Do:** Editing page only for authenticated users; politely reject others (redirect to login with a message).
-- **Learn:** Authorization guard/middleware pattern; checking `$_SESSION` at the top of protected controllers.
-- **Check:** Logged-out access to `/editor` redirects, does not error.
-- **Best practice:** Guard on the **server**, not by hiding a link. Never trust the client.
+## Phase 2 — From Nginx to Python
 
-### 4.2 Webcam preview
-- **Do:** Main section shows live webcam via `getUserMedia()` in a `<video>`, plus the list of selectable overlay images and a capture button.
-- **Learn:** `navigator.mediaDevices.getUserMedia()`, `<video>`, drawing a frame to `<canvas>` and exporting via `toDataURL()`; DOM manipulation with vanilla JS (subject lists "DOM Manipulation" as a learning goal).
-- **Check:** Webcam preview shows. (Note: `getUserMedia` errors over plain HTTP are **tolerated** by the subject.)
-- **Best practice:** Feature-detect the API; handle "no camera / denied" gracefully.
+### 2.1 Nginx routing
 
-### 4.3 Overlay selection + capture gating
-- **Do:** Overlay thumbnails are selectable. **Capture button stays disabled until an overlay is selected.**
-- **Learn:** DOM event handling, toggling `disabled`, tracking selected state.
-- **Check:** Button is unclickable with nothing selected; enables on selection. Verify server-side too (reject a capture with no overlay).
-- **Best practice:** Enforce the "overlay required" rule on the server as well — client gating is UX, not security.
+- **Read:** `config/nginx.conf`.
+- **Understand:** `listen`, `root`, `location`, `try_files`, `proxy_pass` and security
+  headers. Nginx serves allowed assets directly and forwards `/` with its query
+  string to `app:8000`. Other paths are rejected.
+- **Demonstrate:** trace `/css/app.css` and `/?page=login` separately.
+- **Question:** why does Nginx need Python for login, but not for CSS?
 
-### 4.4 Upload fallback
-- **Do:** Allow uploading an image file instead of using the webcam.
-- **Learn:** `<input type="file">`, `$_FILES`, MIME/type checking, size limits.
-- **Check:** Only real images accepted; a renamed `.php` or oversized file is rejected. (Subject: "Offer the ability to upload unwanted content on the server" = NOT secure.)
-- **Best practice:** Validate type by content (`getimagesize`/`finfo`), not just extension. Store with a generated filename, never the user's. Keep uploads out of an executable path.
+### 2.2 WSGI and request parsing
 
-### 4.5 Server-side image compositing
-- **Do:** **On the server**, superimpose the selected overlay (with alpha channel) onto the captured/uploaded image → save final PNG.
-- **Learn:** PHP **GD library** (`imagecreatefrompng`, `imagecopy`/`imagecopyresampled`, alpha blending, `imagesavealpha`, `imagepng`); why the overlays need an alpha channel (subject's note).
-- **Check:** Final image visibly merges both; transparency preserved; saved to disk + recorded in DB with author + timestamp.
-- **Best practice:** Compositing MUST be server-side (subject requirement). Handle image errors without leaking paths.
+- **Read:** `backend/server.py`, beginning with its final `make_server(...)` line.
+- **Understand:** the WSGI server creates `environ` from each incoming request and
+  calls `application(environ, start_response)`. `parameters()` parses encoded fields;
+  `dispatch(environ)` checks the method/body and passes request information to `app.handle()`.
+- **Demonstrate:** explain GET versus POST, `QUERY_STRING`, `wsgi.input`, and the
+  returned status/headers/body. Explain why the body must be bytes.
+- **Question:** is `environ` created once at startup or separately for each request?
 
-### 4.6 Thumbnails + delete own images
-- **Do:** Side section shows thumbnails of the user's previous pictures. User can delete **only their own** images.
-- **Learn:** Query by owner; authorization check on delete (ownership); deleting both DB row and file.
-- **Check:** You can delete your own image; you **cannot** delete someone else's (test by forging an ID in the request).
-- **Best practice:** Always re-check ownership on the server for delete/edit — never trust the ID sent by the client.
+The request limiter currently allows 120 POST requests per IP in a 15-minute window.
+Its counters are held in memory and reset when the Python process restarts.
 
----
+### 2.3 Application routing and request state
 
-## Phase 5 — Gallery features (V.3)
+- **Read:** `backend/app.py`: `handle()`, `dispatch()`, then `show()` and `login()`.
+- **Understand:** `handle()` opens a connection, loads the session, builds a plain
+  request dictionary, routes the request and commits/rolls back database work.
+  `dispatch(request)` chooses an action using the method and `page` parameter.
+- **Demonstrate:** trace `/?page=login` from Nginx through to the rendered form.
+- **Question:** what is the difference between the two functions named `dispatch`?
 
-### 5.1 Public gallery + pagination
-- **Do:** Public page listing ALL users' images, newest first, paginated (≥5 per page).
-- **Learn:** SQL `ORDER BY created_at DESC` with `LIMIT`/`OFFSET`; building page links; escaping output.
-- **Check:** Non-logged-in visitors see the gallery. Pagination navigates correctly; edge pages don't break.
-- **Best practice:** **Escape everything on output** with `htmlspecialchars()` to prevent XSS (subject: injecting HTML/JS = NOT secure).
+There is no `index.php`: `server.py` is the HTTP/WSGI interface and `app.py` coordinates
+application actions. Editing Python, CSS or JavaScript requires rebuilding with
+`make up`, because this setup has no source bind mounts.
 
-### 5.2 Likes & comments (logged-in only)
-- **Do:** Connected users can like and comment images. Guests can view but not interact.
-- **Learn:** Many-to-many likes (unique per user+image, toggle), comment insert with author + timestamp, CSRF on these POSTs, output escaping on comments.
-- **Check:** A guest can't like/comment. A user can't like twice. A comment containing `<script>` renders as text, not code.
-- **Best practice:** This is the classic XSS trap — never render user text as raw HTML.
+## Phase 3 — Database fundamentals
 
-### 5.3 Comment email notification + preference
-- **Do:** When an image gets a new comment, email the image's author. Preference **defaults ON**, toggleable in user settings.
-- **Learn:** Reading a user preference flag; sending mail on an event; testing with Mailpit.
-- **Check:** Author gets email on new comment; turning the preference off stops emails; default is on for new users.
-- **Best practice:** Respect the notification preference everywhere it's checked; test the toggle both ways.
+### 3.1 Schema and initial data
 
----
+- **Read:** `sql/schema.sql`, `sql/seeds.sql` and their Compose mounts.
+- **Understand:** tables `users`, `overlays`, `images`, `comments`, `likes`, `sessions`;
+  primary/foreign keys, uniqueness, indexes, `VARCHAR`, `NOT NULL` and timestamps.
+  Overlay files live in `public/overlays`; SQL stores their names and filenames.
+- **Demonstrate:** open `make db`, use `SHOW TABLES;` and `DESCRIBE users;`.
+- **Question:** why must schema creation run before seed inserts?
 
-## Phase 6 — Security hardening pass (mandatory)
+MariaDB executes the initialization files only for an empty data directory. Editing
+these files does not update an existing database. Do not erase real data merely to
+study initialization.
 
-Go back through everything against the subject's NOT-secure list:
-- **Passwords:** hashed (`password_hash`) — verify in DB. ✅ Phase 2.1
-- **XSS:** all user output escaped (`htmlspecialchars`). ✅ Phase 5
-- **Uploads:** type/size validated, safe filenames, non-executable storage. ✅ Phase 4.4
-- **SQL injection:** 100% prepared statements. ✅ Phase 1.2
-- **CSRF / external form manipulation:** tokens on all state-changing forms. ✅ Phase 2.6
-- **Learn:** OWASP Top 10 basics; defense in depth; least privilege (DB user needs only what it uses).
-- **Check:** Try to break your own app: submit a form from a separate HTML file, inject `<script>` in a comment, forge another user's image ID on delete, put `' OR 1=1 --` in a login field, upload a `.php`.
-- **Best practice:** Assume all input is hostile. Validate on input, escape on output, authorize on the server.
+### 3.2 Parameterized queries and exceptions
 
----
+- **Read:** `backend/database.py`: `connect()`, `fetch_all()`, `fetch_one()`, `execute()` and `users_find_by()`.
+- **Understand:** PyMySQL's role versus MariaDB; `%s` placeholders and separate values;
+  transaction commit/rollback and database exceptions. Dynamic column names are
+  restricted to an internal allowlist.
+- **Demonstrate:** point to a query and identify its SQL and supplied values.
+- **Question:** why should a submitted email be treated as data rather than SQL?
 
-## Phase 7 — Polish & submission (IV, VII)
+PyMySQL's parameterized DB-API queries are not MariaDB's server-side PREPARE protocol.
+Do not claim that this Python application uses PDO or `PDO::ERRMODE_EXCEPTION`.
 
-### 7.1 Zero console noise
-- **Do:** Fix every PHP notice/warning and every JS console error/warning (except tolerated `getUserMedia` HTTP errors).
-- **Learn:** PHP error reporting settings; reading the browser dev-tools console.
-- **Check:** Open dev tools on every page — clean. Check server logs — clean.
-- **Best practice:** A warning is a bug you haven't been bitten by yet. Zero-warning is a graded requirement here.
+## Phase 4 — Accounts and private actions (V.2)
 
-### 7.2 Cross-browser
-- **Do:** Test on Firefox (≥41) and Chrome (≥46).
-- **Check:** Signup→confirm→login→edit→gallery→comment→logout works end-to-end in both.
+Study one action at a time in `app.py`, then follow its database, security and view calls.
 
-### 7.3 One-command deploy check
-- **Do:** From a clean clone: copy `.env.example`→`.env`, run `docker compose up`. Everything works.
-- **Check:** No manual steps beyond that. DB schema auto-loads.
-- **Best practice:** If a fresh clone doesn't boot with one command, it's not done.
+- [ ] **Registration:** `register()`, `security.check_*()`, `password_hash()`, `users_create()`.
+  Demonstrate invalid fields, a weak password and duplicates being rejected. Browser
+  validation helps users; server validation still runs when the browser is bypassed.
+- [ ] **Confirmation:** `secrets.token_hex(32)`, `mail.send_link()`, `confirm()`.
+  Demonstrate login blocked before confirmation, a 24-hour expiry and single-use token.
+  Email confirmation proves access to the mailbox, not that the user is human.
+- [ ] **Login:** `login()`, bcrypt comparison, session rotation.
+  Demonstrate confirmed login and rejection of incorrect credentials.
+- [ ] **Logout:** `logout()`, a POST form with CSRF token, session rotation.
+  Demonstrate logout and subsequent rejection/redirect on protected pages.
+- [ ] **Reset:** `forgot()`, `reset()`, `change_password()`.
+  Demonstrate actual reset-email delivery, one-hour expiry, strong new password,
+  old password rejection, token consumption and older-session invalidation.
+- [ ] **Preferences:** `profile()`, `confirm_email()`.
+  Demonstrate username uniqueness, current-password checks, new-email confirmation,
+  password changes and notification preference. Security changes revoke older sessions.
 
-### 7.4 Submit
-- **Do:** Everything committed to git (never `.env`). Double-check file/folder names. Confirm `.gitignore` covers `.env`, uploads if generated, `vendor/` if any.
-- **Best practice:** Only what's in the repo is graded. Do a fresh clone in a temp dir and defend against *that*.
+**Questions:** what does the browser store in its cookie? Where is session data kept?
+Why compare the logged-in user ID rather than trust a user ID in submitted form data?
 
----
+## Phase 5 — Frontend and layout (V.1)
 
-## Phase 8 — Bonus (only if mandatory part is PERFECT — see subject)
+- **Read:** `views.layout()`, `views.heading()`, form/page renderers and `public/css/app.css`.
+- **Understand:** shared navigation/main/footer, escaped dynamic values, input types,
+  labels, password hints, focus styles, viewport and responsive Flexbox.
+- **Demonstrate:** login, registration, confirmation, reset, gallery, profile and
+  Studio at desktop and phone widths. Check spacing, image size, overflow and keyboard access.
+- **Question:** what is shared between pages, and what is specific to one page?
 
-Do NOT touch these until the mandatory part is complete and bug-free (bonus is only assessed if mandatory is perfect):
-- **AJAXify** exchanges with the server → learn `fetch()`, JSON responses, updating DOM without reload.
-- **Live preview** of the edit on the webcam feed → canvas overlay in real time (subject says easier than it looks).
-- **Infinite scroll** pagination for the gallery → `IntersectionObserver`.
-- **Share to social networks** → Open Graph meta tags, share URLs.
-- **Animated GIF** render.
+Keep the cream/blush cat-lover style coherent. Form illustrations have explicit small
+sizes. Studio needs more workspace than a form but uses the same heading/card styling.
 
----
+## Phase 6 — Editor and image processing (V.4)
 
-## Suggested study order (fastest path to competence)
-1. Docker Compose basics → boot PHP + MySQL.
-2. PHP + PDO + prepared statements.
-3. Sessions & `password_hash`.
-4. HTTP/forms/validation, then CSRF & XSS.
-5. `getUserMedia` + canvas (client) and GD (server).
-6. Responsive CSS (Flexbox/Grid + media queries).
+- [ ] Trace `app.editor()` → overlay/photo queries → `views.editor()` → `public/js/editor.js`.
+- [ ] Explain webcam permission, video, canvas, native DOM events and base-image readiness.
+- [ ] Demonstrate the upload alternative when no camera is available.
+- [ ] Show capture disabled until media and at least one overlay are ready; explain
+  the independent server-side check. V.4 requires an overlay; the old checklist conflicts here.
+- [ ] Explain how JavaScript sends the raw base PNG plus sticker IDs/positions, not
+  merely an already-combined final image.
+- [ ] Read `imaging.compose()`: strict base64, PNG decoding, 5 MB bound, dimension
+  bounds, sticker validation, resizing and alpha composition with Pillow.
+- [ ] Explain browser-side PNG conversion: this implementation does not use PHP
+  `$_FILES` or a multipart upload handler. A submitted MIME label alone is not trusted.
+- [ ] Demonstrate saved server-composed pixels, random PNG filename, database record,
+  previous-photo thumbnails and deletion of both metadata and file.
+- [ ] Explain `app.delete()` ownership check; demonstrate another user's image cannot be deleted.
 
-Build in the phase order above; study each topic the day you need it, not all upfront.
+**Question:** which processing is only a browser preview, and which produces the saved file?
+
+## Phase 7 — Gallery and interaction (V.3)
+
+- [ ] Read `app.gallery()` and the corresponding database/view functions.
+- [ ] Explain newest-first order, stable ID tie-break, five-image pages, LIMIT/OFFSET.
+- [ ] Demonstrate public browsing and multiple pages with enough images.
+- [ ] Read `interaction()` and `public/js/gallery.js`; explain like toggle, comments,
+  authentication, CSRF and AJAX/JSON responses.
+- [ ] Demonstrate a comment containing HTML displayed as text, including dynamically added comments.
+- [ ] Demonstrate real notification email delivery with preference enabled and no
+  delivery with it disabled. New accounts default to enabled; self-comments are also covered.
+
+**Question:** why are authorization and HTML escaping still needed when buttons are hidden from guests?
+
+## Phase 8 — Explain the mandatory security protections
+
+| Subject concern | Code to explain | Evidence to demonstrate |
+| --- | --- | --- |
+| Plaintext passwords | bcrypt functions in `security.py` | Stored hash differs from password; correct password verifies |
+| Injected HTML/JavaScript | `views.e()`, native DOM text nodes | Comment payload displays as text without executing |
+| Unwanted uploads | `imaging.compose()`, safe filenames, Nginx allowlist | Invalid image rejected; saved content is a newly encoded PNG |
+| Altered SQL queries | Parameterized functions in `database.py` | Injection input cannot change query logic or authenticate |
+| External form manipulation | CSRF/Origin checks in `app.dispatch()` | Missing/wrong token and hostile Origin rejected |
+| Access to private actions | Login/session and image-owner checks | Anonymous editor blocked; another owner's deletion rejected |
+
+Explain HttpOnly/SameSite cookies, conditional Secure flag under HTTPS, session-version
+revocation, secret configuration and private error reporting. These are runtime protections,
+not development scaffolding. No collection of checks proves absence of every security flaw.
+
+## Phase 9 — Evaluation readiness
+
+- [ ] Start using a configured `.env` and one `make up` command.
+- [ ] Demonstrate schema/overlay initialization with disposable data rather than wiping real volumes.
+- [ ] Exercise signup → confirmation → login → editor → gallery → comment → preferences → logout.
+- [ ] Check browser Console and Network with extensions disabled; identify HTTP status codes.
+- [ ] Check `make logs` and private diagnostic files:
+  `/tmp/camagru-errors.log` inside `app`, `/tmp/camagru-nginx-errors.log` inside `web`.
+- [ ] Understand ordinary form-validation messages versus unexpected application failures.
+  Suppressing access messages or hiding errors does not prove the application is correct.
+- [ ] Verify current Chrome and Firefox. Historical minimum browser versions from
+  the subject require separate verification; a current-browser pass does not establish them.
+- [ ] Verify actual webcam hardware as well as the upload fallback.
+- [ ] Inspect the submitted repository for credentials, obsolete files and missing assets.
+- [ ] Review optional bonuses only after mandatory functionality is fully verified.
+
+Earlier verification exercised core flows and Chrome desktop/mobile layouts. Firefox
+automation could not launch on this host due to macOS restrictions; Firefox and real
+webcam verification remain outstanding. Re-check current behavior during evaluation.
+There are no committed test scripts or development source mounts in this architecture.
+
+## Phase 10 — Bonuses already present and optional future work
+
+Present in the code, but still demonstrate them: AJAX likes/comments, live overlay
+preview, sticker movement/resizing, and infinite gallery loading with retry behavior.
+The gallery uses native XMLHttpRequest and a scroll listener, not a frontend library.
+Social sharing and animated GIF generation are not implemented; they are optional ideas,
+not tasks needed to finish the mandatory subject.
+
+## PHP-equivalent explanation for the evaluator
+
+The subject permits another server language with functionality equivalent to PHP's
+standard library/extensions. Explain the mapping; do not claim evaluator approval is automatic.
+
+| Python functionality | PHP equivalent |
+| --- | --- |
+| PyMySQL data access/transactions | PDO parameterized queries and transactions |
+| bcrypt | password_hash / password_verify |
+| Pillow composition | GD image decoding, resizing, alpha blending and PNG output |
+| secrets / constant-time comparison | random_bytes / bin2hex / hash_equals |
+| HTML escape / regex / JSON / base64 | htmlspecialchars / preg_match / JSON and base64 functions |
+| SMTP email | mail with configured transport |
+| Cookies and database-backed sessions | setcookie and custom session storage |
+
+Nginx is explicitly allowed as a web server. Python package installation happens while
+building its image; it does not introduce an application framework. Old mandatory PHP
+filenames and PDO configuration belong to the historical checklist, not this Python layout.
+
+## How to use this plan with a tutor
+
+1. Read the next small code section together.
+2. Explain it in your own words; ask for unfamiliar terms before continuing.
+3. Answer one question at a time, with hints before solutions when needed.
+4. Demonstrate the behavior and identify the exact code responsible.
+5. Mark a checkbox only when you can explain and verify it yourself.
+
+Next question: does WSGI `application()` run only at startup, or for each request
+that reaches the Python server?

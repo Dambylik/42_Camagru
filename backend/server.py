@@ -1,4 +1,5 @@
 """Web Server Gateway Interface entry point behind Nginx; no web framework."""
+
 import time
 import traceback
 from http import HTTPStatus
@@ -11,58 +12,69 @@ rates = {}
 
 
 def parameters(value):
-    fields = parse_qs(value, keep_blank_values=True, max_num_fields=30, errors='strict')
+    fields = parse_qs(value, keep_blank_values=True, max_num_fields=30, errors="strict")
     if any(len(items) != 1 for items in fields.values()):
-        raise ValueError('Duplicate fields')
-    return {key:items[0] for key,items in fields.items()}
+        raise ValueError("Duplicate fields")
+    return {key: items[0] for key, items in fields.items()}
 
 
 def response(status, body):
-    return status, [('Content-Type','text/plain; charset=utf-8')], body
+    return status, [("Content-Type", "text/plain; charset=utf-8")], body
 
 
 def dispatch(environ):
-    if environ.get('PATH_INFO','/') != '/':
-        return response(404,b'Not found.')
-    method = environ['REQUEST_METHOD']
-    if method not in ('GET','POST'):
-        return response(405,b'Method not allowed.')
-    query = parameters(environ.get('QUERY_STRING',''))
+    if environ.get("PATH_INFO", "/") != "/":
+        return response(404, b"Not found.")
+    method = environ["REQUEST_METHOD"]
+    if method not in ("GET", "POST"):
+        return response(405, b"Method not allowed.")
+    query = parameters(environ.get("QUERY_STRING", ""))
     data = {}
-    if method == 'POST':
-        length = int(environ.get('CONTENT_LENGTH') or '0')
+    if method == "POST":
+        length = int(environ.get("CONTENT_LENGTH") or "0")
         if not 0 < length <= MAX_BODY:
-            return response(413,b'Request too large or empty.')
-        if environ.get('CONTENT_TYPE','').split(';')[0] != 'application/x-www-form-urlencoded':
-            return response(415,b'Unsupported form encoding.')
+            return response(413, b"Request too large or empty.")
+        if (
+            environ.get("CONTENT_TYPE", "").split(";")[0]
+            != "application/x-www-form-urlencoded"
+        ):
+            return response(415, b"Unsupported form encoding.")
         now = time.monotonic()
         for key in list(rates):
             if now - rates[key][0] >= 900:
                 del rates[key]
-        ip = environ.get('HTTP_X_REAL_IP',environ.get('REMOTE_ADDR',''))
-        start,count = rates.get(ip,(now,0))
+        ip = environ.get("HTTP_X_REAL_IP", environ.get("REMOTE_ADDR", ""))
+        start, count = rates.get(ip, (now, 0))
         if count >= 120:
-            return response(429,b'Too many requests. Please try again later.')
-        rates[ip] = (start,count+1)
-        raw = environ['wsgi.input'].read(length)
+            return response(429, b"Too many requests. Please try again later.")
+        rates[ip] = (start, count + 1)
+        raw = environ["wsgi.input"].read(length)
         if len(raw) != length:
-            raise ValueError('Incomplete request')
-        data = parameters(raw.decode('utf-8'))
-    return handle(method, query.get('page', 'home'), query, data,
-                  environ.get('HTTP_COOKIE', ''), environ.get('HTTP_ORIGIN', ''))
+            raise ValueError("Incomplete request")
+        data = parameters(raw.decode("utf-8"))
+    return handle(
+        method,
+        query.get("page", "home"),
+        query,
+        data,
+        environ.get("HTTP_COOKIE", ""),
+        environ.get("HTTP_ORIGIN", ""),
+    )
 
 
 def application(environ, start_response):
     try:
-        status,headers,body = dispatch(environ)
-    except (ValueError,UnicodeError):
-        status,headers,body = response(400,b'Invalid request.')
+        status, headers, body = dispatch(environ)
+    except (ValueError, UnicodeError):
+        status, headers, body = response(400, b"Invalid request.")
     except Exception:
-        with open('/tmp/camagru-errors.log','a',encoding='utf-8') as log:
+        with open("/tmp/camagru-errors.log", "a", encoding="utf-8") as log:
             log.write(traceback.format_exc())
-        status,headers,body = response(500,b'Temporarily unavailable. Please try again later.')
-    headers.extend([('Content-Length',str(len(body))),('Cache-Control','no-store')])
-    start_response(f'{status} {HTTPStatus(status).phrase}',headers)
+        status, headers, body = response(
+            500, b"Temporarily unavailable. Please try again later."
+        )
+    headers.extend([("Content-Length", str(len(body))), ("Cache-Control", "no-store")])
+    start_response(f"{status} {HTTPStatus(status).phrase}", headers)
     return [body]
 
 
@@ -71,5 +83,7 @@ class QuietHandler(WSGIRequestHandler):
         pass
 
 
-if __name__ == '__main__':
-    make_server('0.0.0.0',8000,application,handler_class=QuietHandler).serve_forever()
+if __name__ == "__main__":
+    make_server(
+        "0.0.0.0", 8000, application, handler_class=QuietHandler
+    ).serve_forever()

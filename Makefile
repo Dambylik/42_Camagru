@@ -1,5 +1,3 @@
-# Camagru — thin wrapper over docker compose. `make` brings the stack up.
-.DEFAULT_GOAL := up
 .PHONY: up build down re logs ps db clean fclean
 
 up: .env          ## build if needed and start (app :8000, mailpit :8025)

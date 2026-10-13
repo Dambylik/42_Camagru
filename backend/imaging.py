@@ -1,4 +1,5 @@
 """Server-side image decoding and composition (PHP equivalent: GD)."""
+
 import base64
 import binascii
 import io
@@ -11,45 +12,55 @@ MAX_BYTES = 5 * 1024 * 1024
 
 
 def compose(data_url, sticker_json, overlays, root):
-    prefix = 'data:image/png;base64,'
+    prefix = "data:image/png;base64,"
     if not data_url.startswith(prefix):
-        raise ValueError('Invalid image data.')
+        raise ValueError("Invalid image data.")
     try:
-        raw = base64.b64decode(data_url[len(prefix):], validate=True)
+        raw = base64.b64decode(data_url[len(prefix) :], validate=True)
         stickers = json.loads(sticker_json)
     except (ValueError, binascii.Error):
-        raise ValueError('Invalid image or sticker data.') from None
+        raise ValueError("Invalid image or sticker data.") from None
     if not raw or len(raw) > MAX_BYTES:
-        raise ValueError('Image must be at most 5 MB.')
+        raise ValueError("Image must be at most 5 MB.")
     if not isinstance(stickers, list) or not 1 <= len(stickers) <= 20:
-        raise ValueError('Pick between one and twenty overlays.')
+        raise ValueError("Pick between one and twenty overlays.")
     try:
-        with Image.open(io.BytesIO(raw), formats=['PNG']) as base:
+        with Image.open(io.BytesIO(raw), formats=["PNG"]) as base:
             if max(base.size) > 4000 or base.width * base.height > 16000000:
-                raise ValueError('Image dimensions must be at most 4000 × 4000.')
+                raise ValueError("Image dimensions must be at most 4000 × 4000.")
             base.load()
-            out = base.convert('RGBA').resize((600, 600), Image.Resampling.LANCZOS)
+            out = base.convert("RGBA").resize((600, 600), Image.Resampling.LANCZOS)
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
-        raise ValueError('Could not decode the image.') from None
-    allowed = {int(item['id']): item['path'] for item in overlays}
+        raise ValueError("Could not decode the image.") from None
+    allowed = {int(item["id"]): item["path"] for item in overlays}
     for sticker in stickers:
         if not isinstance(sticker, dict):
-            raise ValueError('Invalid overlay.')
+            raise ValueError("Invalid overlay.")
         try:
-            values = [sticker[k] for k in ('id', 'x', 'y', 'w', 'h')]
-            if any(isinstance(v, bool) or not isinstance(v, (int, float))
-                   or not math.isfinite(v) for v in values):
+            values = [sticker[k] for k in ("id", "x", "y", "w", "h")]
+            if any(
+                isinstance(v, bool)
+                or not isinstance(v, (int, float))
+                or not math.isfinite(v)
+                for v in values
+            ):
                 raise ValueError()
             ident, x, y, width, height = map(int, values)
-            if ident not in allowed or not (0 <= x < 600 and 0 <= y < 600
-                                            and 1 <= width <= 600 and 1 <= height <= 600):
+            if ident not in allowed or not (
+                0 <= x < 600
+                and 0 <= y < 600
+                and 1 <= width <= 600
+                and 1 <= height <= 600
+            ):
                 raise ValueError()
-            path = Path(root) / 'overlays' / Path(allowed[ident]).name
-            with Image.open(path, formats=['PNG']) as overlay:
-                layer = overlay.convert('RGBA').resize((width, height), Image.Resampling.LANCZOS)
+            path = Path(root) / "overlays" / Path(allowed[ident]).name
+            with Image.open(path, formats=["PNG"]) as overlay:
+                layer = overlay.convert("RGBA").resize(
+                    (width, height), Image.Resampling.LANCZOS
+                )
                 out.alpha_composite(layer, dest=(x, y))
         except (KeyError, TypeError, ValueError, OSError, UnidentifiedImageError):
-            raise ValueError('Pick a valid overlay and position.') from None
+            raise ValueError("Pick a valid overlay and position.") from None
     result = io.BytesIO()
-    out.save(result, format='PNG')
+    out.save(result, format="PNG")
     return result.getvalue()

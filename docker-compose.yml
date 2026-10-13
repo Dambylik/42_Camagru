@@ -12,7 +12,9 @@ services:
         depends_on:
             - app
     app:
-        build: .
+        build:
+            context: .
+            dockerfile: Dockerfile
         volumes:
             - uploads_data:/app/public/uploads
         environment:
