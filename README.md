@@ -1,123 +1,100 @@
-# 🐱 Camagrrru
+# Camagrrru
 
-A webcam/photo editing web app. PHP only, no frameworks, no composer, no npm. Docker for one-command deploy.
+Framework-free Python 3.10 application following `en.subject.camagru.pdf`, Version 4.1.
+The 2018 evaluation sheet is historical reference only.
 
-📘 **New to the code? Read [LEARNING.md](LEARNING.md)** — every concept, why it was chosen, and best practices.
+## Start
 
-## Run it
+Install/start Docker Desktop, then run from this folder:
 
-```bash
-make        # copies .env from the template on first run, then builds + starts
-make re     # full reset — wipes the DB volume and rebuilds (use after schema changes)
+```sh
+docker desktop start
+make up
 ```
 
-- App:     http://localhost:8000
-- Mailpit: http://localhost:8025 (read confirmation / notification emails)
+Open http://localhost:8000. Development emails appear at http://localhost:8025.
+`make up` builds the image and starts the Python web server, MariaDB and Mailpit.
+A missing `.env` is generated with random database passwords by `config/create_env.py`
+(Python 3 on the host). Existing credentials and persistent volumes are preserved.
+Copying `.env.example` is also possible, but replace its example passwords before startup.
+No npm or Composer installation is needed to run the application.
 
-Other `make` targets: `down`, `logs`, `ps`, `db` (MariaDB shell), `clean` / `fclean`.
+## Architecture
 
-## Stack
+- `backend/server.py`: native HTTP server, request parsing, static-file allowlist, security headers and bounded concurrency.
+- `backend/application.py`: routes and application behavior.
+- `backend/views.py`: HTML rendering; all dynamic text is escaped.
+- `backend/db.py`: parameterized MariaDB queries; database failures raise exceptions.
+- `backend/security.py`: bcrypt passwords, input validation, database-backed sessions, CSRF tokens and session rotation.
+- `backend/imaging.py`: validates PNG data and composites overlays on the server using Pillow.
+- `backend/mail.py`: SMTP messages using Python's standard library.
+- `backend/bootstrap.py`: creates the sessions table and adds missing account-security columns without dropping data.
+- `public/js/`: native browser JavaScript for the editor and AJAX gallery.
+- `public/css/`, `public/overlays/`: the existing design and alpha-channel overlays.
+- `sql/schema.sql`, `sql/seeds.sql`: initialize a new MariaDB volume.
 
-- **PHP 8.2 + Apache** — `pdo_mysql` (DB), `gd` (image compositing), `msmtp` (mail).
-- **MariaDB 11** — database, schema auto-loaded on first boot.
-- **Mailpit** — catches all outgoing mail in dev.
+MariaDB stores users, images, comments, likes, overlay metadata and sessions. Uploaded PNGs
+are stored in the `uploads_data` volume. Existing PHP bcrypt accounts remain usable; users
+must log in again because Python uses its own session cookie. Old `index.php?page=...`
+links are handled by Python for compatibility; no PHP executable is involved.
 
-## Layout
+Source changes in `backend/` are bind-mounted, but restart `web` to reload Python code:
 
-```
-public/               the ONLY web-served folder
-  index.php           front controller — single entry point
-  css/app.css         all styles
-  uploads/            user-generated images (gitignored except .gitkeep)
-  overlays/           sticker PNGs
-  cat-cartoon.png     logo
-config/
-  database.php        Database class — PDO singleton (ERRMODE_EXCEPTION)
-  setup.php           bootstrap: .env loading + session_start()
-  apache.conf         DocumentRoot = public/
-  msmtp.conf          routes mail to Mailpit:1025
-app/
-  core/
-    Router.php        maps "METHOD + ?page=" -> [Controller, method]
-    Database.php      requires config/database.php
-    Csrf.php          token generation + hash_equals verify
-    Mailer.php        wraps mail(), reads MAIL_FROM from env
-  controllers/
-    AuthController.php   register / confirm / login / logout / forgot / reset / profile
-    FeedController.php   gallery / like-ajax / comment-ajax / gallery-json
-    EditorController.php show / capture / delete
-  models/
-    User.php          all user DB operations
-    Image.php         images, overlays, likes
-    Comment.php       comments
-  views/
-    partials/
-      header.php      nav + <head>, shared across all pages
-      footer.php      closes main/body/html
-    gallery.php       public gallery with infinite scroll + AJAX likes/comments
-    editor.php        webcam/upload editor with sticker compositing
-    login.php / register.php / forgot.php / reset.php / profile.php
-    register_done.php / 404.php / error.php
-sql/
-  schema.sql          5 tables: users, overlays, images, comments, likes
-  seeds.sql           6 cat overlays
-Dockerfile            PHP+Apache image, msmtp, gd, pdo_mysql
-docker-compose.yml    web / db / mailpit services
-Makefile              shortcuts
-.env.example          template — copy to .env and fill in
+```sh
+docker compose restart web
 ```
 
-## How a request flows
+Refresh for CSS/JS edits. Rebuild for dependency, Dockerfile or packaged asset changes.
 
-1. Every URL is `?page=X` (e.g. `index.php?page=login`). Only `public/` is web-accessible — `app/`, `config/`, `.env`, `sql/` are unreachable from the browser.
-2. `index.php` requires `config/setup.php` (loads `.env` + starts session), then dispatches via `Router`.
-3. The **Router** matches `"METHOD page"` to `[Controller, method]`, loads the controller file and calls the method.
-4. The **controller** calls **models** (PDO prepared statements) and renders a **view**.
+## Subject requirements
 
-## Features
+- Registration validates username, email and password in both browser and server.
+- A unique 24-hour email confirmation is needed before login.
+- Reset links expire after one hour and are consumed after use.
+- Profile supports username, password, confirmed email changes and notification preferences.
+- Logout is a one-click POST button with CSRF protection on all normal application pages.
+- The public gallery orders images newest first and paginates by five.
+- Only authenticated users can like/comment or access the editor.
+- Comment notification is enabled by default and can be disabled (including notifications for self-comments).
+- Capture requires a ready base image AND a selected overlay, per V.4; server checks independently.
+- Uploaded photos and webcam frames follow the same server-side composition path.
+- Only owners can delete their pictures.
+- CSRF, parameterized SQL, escaped HTML, bcrypt, secure random tokens, upload bounds and session revocation protect core flows.
+- Native JavaScript retains live overlay preview, drag/resize and infinite gallery loading as bonuses.
 
-### Auth
-- Register with username / email / bcrypt password (min 8 chars, uppercase, digit, special char)
-- Email confirmation with unique token (24h expiry) — can't log in until confirmed
-- Login with session regeneration on privilege change
-- Password reset via email (1h token, single-use)
-- Profile: update username / email / password / email notification preference
-- CSRF protection on all POST forms (`hash_equals` timing-safe verify)
+See `docs/php-equivalents.md` for dependency/function equivalents and
+`docs/evaluation.md` for a subject-based manual verification list.
+No claim of universal security or historical browser-version coverage is made; these need actual evaluation.
 
-### Gallery (public)
-- All images ordered by creation date, 5 per page
-- **Infinite scroll** — next page loads automatically as you scroll down
-- **AJAX likes** — toggle without page reload
-- **AJAX comments** — post and appear instantly, no reload
-- Email notification to image owner on new comment (if preference enabled)
-- Guests can view; only logged-in users can like/comment
+## Verification and diagnostics
 
-### Editor (login required)
-- Live webcam preview on canvas (`requestAnimationFrame` loop)
-- Upload a photo instead of webcam — loads onto canvas client-side
-- Pick cat stickers from the overlay panel — click to add, multiple stickers supported
-- Each sticker is **draggable** and **resizable from any corner**
-- Capture sends the raw photo (base64) + sticker positions — the browser never merges them
-- Server-side GD compositing: resizes base to 600×600, composites each sticker at user-specified position/size
-- At least one sticker is required (button disabled + re-checked on the server); many are supported
-- Thumbnail grid of your own images with delete (ownership enforced server-side)
+```sh
+make test
+node tests/ui-regressions.cjs
+```
 
-## Security
-- All DB queries use PDO prepared statements — no SQL injection possible
-- `PDO::ATTR_EMULATE_PREPARES => false` — real server-side prepared statements
-- All user output escaped with `htmlspecialchars()` — no XSS
-- Passwords stored as bcrypt hashes — never plain text
-- CSRF tokens on all POST forms — `hash_equals` prevents timing attacks
-- Ownership checked server-side before delete — 403 if mismatch
-- No user enumeration on login (same error for wrong user or wrong password)
-- `app/`, `config/`, `.env`, `sql/` outside web root — not browser-accessible
+The Python integration test uses temporary accounts/photos in the running database and
+removes those fixtures afterward. Test emails remain in Mailpit; existing accounts and images
+are not deleted. Node is optional and used only for development regression tests.
+The test covers authentication, reset, CSRF, SQL injection, HTML escaping, preferences,
+server composition, ownership and pagination. Browser/SMTP checks are described separately.
 
-## Bonuses
-1. **Draggable stickers** — move any sticker anywhere on the canvas
-2. **Resizable stickers from any corner** — drag any of the 4 corner handles
-3. **Upload flow** — photo loads client-side onto canvas before capture, overlay positioning works on uploads too
-4. **Multiple stickers** — add as many overlays as you want, each independently positioned
-5. **Infinite scroll** — gallery loads more images automatically on scroll
+Routine web access logs are disabled. Unexpected exceptions are recorded privately in
+`/tmp/camagru-errors.log` inside `web` and return a generic error response to visitors.
+An empty console does not prove the app has no failures: check this file and HTTP responses too.
 
-## Browser compatibility
-Tested against Firefox ≥ 41 and Chrome ≥ 46. No `aspect-ratio`, no CSS grid, no `fetch`, no `{ once }` event option — all replaced with compatible equivalents.
+```sh
+docker compose logs --since=2m web
+docker compose exec web sh -c 'test ! -s /tmp/camagru-errors.log'
+```
+
+Expected invalid input produces controlled 400/403 responses, not tracebacks. Docker/MariaDB
+infrastructure messages are separate from application errors. Native Linux AIO is disabled in
+MariaDB to avoid the unavailable io_uring path in Docker Desktop. Its memory-pressure facility
+can still be unavailable in that environment; this is not a Python error.
+
+`make down` keeps data. `make clean`, `make fclean` and `make re` DELETE the persistent
+volumes and therefore your database/uploads. They are explicit reset commands.
+
+The pre-migration working files were backed up at `/tmp/camagru-before-python.tar.gz`;
+that temporary archive is not submitted and excludes `.env` and `.git`.

@@ -1,85 +1,4 @@
-<?php $pageTitle = 'Studio — Camagrrru'; require __DIR__ . '/partials/header.php'; ?>
 
-<?php if (!empty($_SESSION['editor_error'])): ?>
-    <div class="alert alert-error"><?= htmlspecialchars($_SESSION['editor_error']) ?></div>
-    <?php unset($_SESSION['editor_error']); ?>
-<?php endif ?>
-
-<div class="editor-wrap">
-
-    <!-- ── Main: webcam + controls ── -->
-    <div class="editor-main">
-        <div id="preview-wrap">
-            <video id="webcam" autoplay playsinline muted style="display:none"></video>
-            <canvas id="canvas-preview"></canvas>
-        </div>
-
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap">
-            <button class="btn btn-primary" id="btn-capture" disabled>📷 Capture</button>
-            <button class="btn btn-ghost"   id="btn-retake"  style="display:none">↩ Retake</button>
-        </div>
-
-        <!-- Hidden form submitted by JS after capture -->
-        <form id="capture-form" method="post" action="index.php?page=capture" style="display:none">
-            <?= Csrf::field() ?>
-            <input type="hidden" name="image_data" id="image_data">
-            <input type="hidden" name="stickers"   id="stickers_data">
-        </form>
-
-        <!-- Upload fallback -->
-        <details style="margin-top:.5rem">
-            <summary style="cursor:pointer;color:var(--muted);font-size:.9rem">Or upload a photo instead</summary>
-            <div style="margin-top:.75rem">
-                <input type="file" id="file-input" accept="image/*" style="color:var(--text)">
-            </div>
-        </details>
-    </div>
-
-    <!-- ── Side: overlays + thumbnails ── -->
-    <div class="editor-side">
-
-        <div class="card">
-            <p style="margin-bottom:.5rem;font-size:.9rem;color:var(--muted)">Pick a cat overlay 🐾</p>
-            <p style="margin-bottom:.5rem;font-size:.8rem;color:var(--muted)">Double-click a sticker to remove it.</p>
-            <?php if (empty($overlays)): ?>
-                <p style="color:var(--muted);font-size:.85rem">No overlays yet 😿</p>
-            <?php else: ?>
-            <div class="overlay-list">
-                <?php foreach ($overlays as $ov): ?>
-                    <div class="overlay-thumb" data-id="<?= $ov['id'] ?>"
-                         title="<?= htmlspecialchars($ov['name']) ?>">
-                        <img src="overlays/<?= htmlspecialchars($ov['path']) ?>"
-                             alt="<?= htmlspecialchars($ov['name']) ?>">
-                    </div>
-                <?php endforeach ?>
-            </div>
-            <?php endif ?>
-        </div>
-
-        <?php if (!empty($myImages)): ?>
-        <div class="card">
-            <p style="margin-bottom:.5rem;font-size:.9rem;color:var(--muted)">Your photos 🐱</p>
-            <div class="thumb-grid">
-                <?php foreach ($myImages as $img): ?>
-                    <div class="thumb-item">
-                        <img src="uploads/<?= htmlspecialchars($img['path']) ?>"
-                             alt="your image">
-                        <form method="post" action="index.php?page=delete-image">
-                            <?= Csrf::field() ?>
-                            <input type="hidden" name="image_id" value="<?= $img['id'] ?>">
-                            <button class="del-btn" type="submit"
-                                    onclick="return confirm('Delete this image?')">✕</button>
-                        </form>
-                    </div>
-                <?php endforeach ?>
-            </div>
-        </div>
-        <?php endif ?>
-
-    </div>
-</div>
-
-<script>
 (function () {
     const video       = document.getElementById('webcam');
     const canvas      = document.getElementById('canvas-preview');
@@ -186,7 +105,7 @@
     }
 
     // ── Drag state ───────────────────────────────────────────────────────────
-    let drag = null, dragOx = 0, dragOy = 0, anchorX = 0, anchorY = 0;
+    let drag = null, dragOx = 0, dragOy = 0, anchorX = 0, anchorY = 0, resizeLeft = false, resizeTop = false;
 
     function onDown(e) {
         if (frozen) return;
@@ -198,6 +117,8 @@
             const c = nearCorner(s, x, y);
             if (c) {
                 active = i; drag = 'resize';
+                resizeLeft = c.x === s.x;
+                resizeTop = c.y === s.y;
                 anchorX = c.x === s.x ? s.x + s.w : s.x;
                 anchorY = c.y === s.y ? s.y + s.h : s.y;
                 return;
@@ -221,10 +142,14 @@
             s.x = Math.max(0, Math.min(SIZE - s.w, x - dragOx));
             s.y = Math.max(0, Math.min(SIZE - s.h, y - dragOy));
         } else {
-            s.x = Math.max(0, Math.min(anchorX - min, Math.min(x, anchorX)));
-            s.y = Math.max(0, Math.min(anchorY - min, Math.min(y, anchorY)));
-            s.w = Math.max(min, Math.abs(x - anchorX));
-            s.h = Math.max(min, Math.abs(y - anchorY));
+            const edgeX = resizeLeft ? Math.max(0, Math.min(anchorX - min, x))
+                                     : Math.min(SIZE, Math.max(anchorX + min, x));
+            const edgeY = resizeTop ? Math.max(0, Math.min(anchorY - min, y))
+                                    : Math.min(SIZE, Math.max(anchorY + min, y));
+            s.x = resizeLeft ? edgeX : anchorX;
+            s.y = resizeTop ? edgeY : anchorY;
+            s.w = Math.abs(edgeX - anchorX);
+            s.h = Math.abs(edgeY - anchorY);
         }
         canvas.style.cursor = drag === 'resize' ? 'nwse-resize' : 'grabbing';
     }
@@ -277,10 +202,15 @@
     fileInput.addEventListener('change', () => {
         const file = fileInput.files[0];
         if (!file) return;
+        if (file.size > 5 * 1024 * 1024 || !/^image\/(png|jpeg|webp)$/.test(file.type)) {
+            alert('Choose a PNG, JPEG or WebP image up to 5 MB.'); return;
+        }
         const reader = new FileReader();
         reader.onload = ev => {
             const img = new Image();
+            img.onerror = () => { alert('Could not read this image.'); };
             img.onload = () => {
+                if (img.width > 4000 || img.height > 4000) { alert('Image must be at most 4000 × 4000 pixels.'); return; }
                 cancelAnimationFrame(animFrame);
                 if (video.srcObject) { video.srcObject.getTracks().forEach(t => t.stop()); video.srcObject = null; }
                 uploadedBase = img;
@@ -295,11 +225,7 @@
     });
 
     // ── Webcam ────────────────────────────────────────────────────────────────
-    <?php if ($previewImage): ?>
-    const previewSrc = 'uploads/<?= htmlspecialchars($previewImage) ?>';
-    <?php else: ?>
-    const previewSrc = null;
-    <?php endif ?>
+    const previewSrc = document.getElementById("canvas-preview").dataset.preview || null;
 
     if (previewSrc) {
         const img = new Image();
@@ -357,10 +283,7 @@
                         video.removeEventListener('playing', onPlaying);
                         hasMedia = true; updateCaptureBtn(); loop();
                     });
-                });
+                }).catch(() => { hasMedia = false; updateCaptureBtn(); });
         }
     });
 })();
-</script>
-
-<?php require __DIR__ . '/partials/footer.php'; ?>

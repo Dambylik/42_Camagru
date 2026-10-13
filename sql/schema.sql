@@ -7,6 +7,10 @@ CREATE TABLE users (
     username           VARCHAR(30)   NOT NULL,
     email              VARCHAR(255)  NOT NULL,
     password           VARCHAR(255)  NOT NULL,          -- bcrypt hash, never plain text
+    session_version    INT UNSIGNED NOT NULL DEFAULT 1,
+    pending_email      VARCHAR(255) DEFAULT NULL,
+    email_change_token VARCHAR(64) DEFAULT NULL,
+    email_change_expires_at DATETIME DEFAULT NULL,
     is_verified        TINYINT(1)    NOT NULL DEFAULT 0,
     notify_on_comment  TINYINT(1)    NOT NULL DEFAULT 1, -- V.3: on by default, user can disable
     verify_token       VARCHAR(64)   DEFAULT NULL,

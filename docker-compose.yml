@@ -1,10 +1,14 @@
 services:
     web:
-        build: . ## build image from a Dockerfile in this folder
+        build: .
         ports:
-            - "8000:80"  # HOST:CONTAINER — visit localhost:8000, it hits  Apache in port 80
+            - "127.0.0.1:8000:8000"
         volumes:
-            - ./:/var/www/html # HOST_path:CONTAINER_path — live-sync your code
+            - ./backend:/app/backend:ro
+            - ./public/css:/app/public/css:ro
+            - ./public/js:/app/public/js:ro
+            - ./tests:/app/tests:ro
+            - uploads_data:/app/public/uploads
         environment:
             DB_HOST: db
             DB_NAME: ${MYSQL_DATABASE}
@@ -12,25 +16,38 @@ services:
             DB_PASSWORD: ${MYSQL_PASSWORD}
             APP_URL: ${APP_URL:-http://localhost:8000}
             MAIL_FROM: ${MAIL_FROM:-noreply@camagru.local}
+            SMTP_HOST: mailpit
+            SMTP_PORT: 1025
         depends_on:
-            - db
-            - mailpit
-
-    db:  
-        image: docker.io/library/mariadb:11 # 3306 — the database's default internal port
+            db:
+                condition: service_healthy
+            mailpit:
+                condition: service_started
+        healthcheck:
+            test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+    db:
+        image: docker.io/library/mariadb:11
+        command: ["--innodb-use-native-aio=0"]
         environment:
             MYSQL_DATABASE: ${MYSQL_DATABASE}
             MYSQL_USER: ${MYSQL_USER}
             MYSQL_PASSWORD: ${MYSQL_PASSWORD}
             MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
         volumes:
-            - db_data:/var/lib/mysql # named volume — keeps DB data alive across restarts
-            - ./sql:/docker-entrypoint-initdb.d:ro # schema.sql + seeds.sql auto-run on FIRST boot (alphabetical order)
-
+            - db_data:/var/lib/mysql
+            - ./sql:/docker-entrypoint-initdb.d:ro
+        healthcheck:
+            test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+            interval: 5s
+            timeout: 5s
+            retries: 20
     mailpit:
         image: docker.io/axllent/mailpit:latest
         ports:
-            - "8025:8025" # Mailpit web UI, # SMTP is on port 1025 inside the network; web sends here, you read at :8025
-    
+            - "127.0.0.1:8025:8025"
 volumes:
-    db_data: # named volume for DB data
+    db_data:
+    uploads_data:

@@ -1,84 +1,16 @@
-<?php require __DIR__ . '/partials/header.php'; ?>
 
-<h1 style="margin-bottom:1.5rem">🐱 Galerrry</h1>
-
-<?php if (empty($images)): ?>
-    <p style="color:var(--muted)">No photos yet. <a href="index.php?page=editor">Be the first to post! 🐾</a></p>
-<?php else: ?>
-
-<div class="gallery-grid">
-<?php foreach ($images as $img): ?>
-    <div class="gallery-card" id="img-<?= $img['id'] ?>">
-        <img src="uploads/<?= htmlspecialchars($img['path']) ?>"
-             alt="Image by <?= htmlspecialchars($img['username']) ?>">
-
-        <div class="meta">
-            <span><?= htmlspecialchars($img['username']) ?></span>
-
-            <?php if (!empty($_SESSION['user_id'])): ?>
-                <button class="like-btn <?= $img['liked'] ? 'liked' : '' ?>"
-                        data-id="<?= $img['id'] ?>">
-                    💞 <span class="like-count"><?= $img['like_count'] ?></span>
-                </button>
-            <?php else: ?>
-                <span>💞 <?= $img['like_count'] ?></span>
-            <?php endif ?>
-        </div>
-
-        <div class="comments">
-            <div class="comment-list">
-            <?php foreach ($img['comments'] as $c): ?>
-                <div class="comment">
-                    <span class="author"><?= htmlspecialchars($c['username']) ?></span>
-                    <?= htmlspecialchars($c['content']) ?>
-                </div>
-            <?php endforeach ?>
-            </div>
-
-            <?php if (!empty($_SESSION['user_id'])): ?>
-                <form class="comment-form" data-id="<?= $img['id'] ?>">
-                    <input type="text" name="content" placeholder="Say something nice... 🐱" maxlength="500" required>
-                    <button class="btn btn-ghost" type="submit">Post</button>
-                </form>
-            <?php endif ?>
-        </div>
-    </div>
-<?php endforeach ?>
-</div>
-
-<?php if ($pages > 1): ?>
-<div class="pagination" id="pagination">
-    <?php if ($page > 1): ?>
-        <a href="index.php?page=home&p=<?= $page - 1 ?>">‹ Prev</a>
-    <?php endif ?>
-    <?php for ($i = 1; $i <= $pages; $i++): ?>
-        <?php if ($i === $page): ?>
-            <span class="current"><?= $i ?></span>
-        <?php else: ?>
-            <a href="index.php?page=home&p=<?= $i ?>"><?= $i ?></a>
-        <?php endif ?>
-    <?php endfor ?>
-    <?php if ($page < $pages): ?>
-        <a href="index.php?page=home&p=<?= $page + 1 ?>">Next ›</a>
-    <?php endif ?>
-</div>
-<?php endif ?>
-
-<?php endif ?>
-
-<div id="scroll-sentinel" style="height:1px"></div>
-<p id="scroll-loader" style="text-align:center;color:var(--muted);padding:1rem;display:none">🐾 Loading...</p>
-
-<script>
 (function () {
-    var CSRF    = <?= json_encode(Csrf::generate()) ?>;
-    var loggedIn = <?= !empty($_SESSION['user_id']) ? 'true' : 'false' ?>;
-    var curPage  = <?= (int)$page ?>;
-    var maxPages = <?= (int)$pages ?>;
+    var config = document.getElementById("gallery-config").dataset;
+    var CSRF = config.csrf;
+    var loggedIn = config.loggedIn === "true";
+    var curPage = Number(config.page);
+    var maxPages = Number(config.pages);
     var loading  = false;
+    var failed   = false;
     var grid     = document.querySelector('.gallery-grid');
     var sentinel = document.getElementById('scroll-sentinel');
     var loader   = document.getElementById('scroll-loader');
+    var retry = document.getElementById('scroll-retry');
     var pagination = document.getElementById('pagination');
 
     // Hide static pagination — infinite scroll takes over
@@ -98,13 +30,36 @@
         xhr.send(body);
     }
 
-    function get(url, cb) {
+    function get(url, cb, fail, done) {
         var xhr = new XMLHttpRequest();
-        xhr.open('GET', url, true);
-        xhr.onload = function() {
-            if (xhr.status === 200) { try { cb(JSON.parse(xhr.responseText)); } catch(e) {} }
-        };
-        xhr.send();
+        var settled = false;
+        function finish(error, result) {
+            if (settled) return;
+            settled = true;
+            try {
+                if (error) fail();
+                else cb(result);
+            } catch (e) {
+                fail();
+            } finally {
+                done();
+            }
+        }
+        try {
+            xhr.open('GET', url, true);
+            xhr.timeout = 15000;
+            xhr.onload = function() {
+                if (xhr.status !== 200) { finish(true); return; }
+                var result;
+                try { result = JSON.parse(xhr.responseText); }
+                catch (e) { finish(true); return; }
+                finish(false, result);
+            };
+            xhr.onerror = xhr.ontimeout = xhr.onabort = function() { finish(true); };
+            xhr.send();
+        } catch (e) {
+            finish(true);
+        }
     }
 
     // ── Build a card from JSON data ───────────────────────────────────────────
@@ -182,7 +137,7 @@
     function bindLike(btn) {
         btn.addEventListener('click', function() {
             var id = btn.getAttribute('data-id');
-            post('index.php?page=like-ajax', { image_id: id }, function(res) {
+            post('/?page=like-ajax', { image_id: id }, function(res) {
                 if (res.error) return;
                 btn.querySelector('.like-count').textContent = res.count;
                 if (res.liked) btn.classList.add('liked');
@@ -199,7 +154,7 @@
             var input   = form.querySelector('input[name=content]');
             var content = input.value.trim();
             if (!content) return;
-            post('index.php?page=comment-ajax', { image_id: id, content: content }, function(res) {
+            post('/?page=comment-ajax', { image_id: id, content: content }, function(res) {
                 if (res.error) return;
                 var list = document.querySelector('#img-' + id + ' .comment-list');
                 list.appendChild(buildComment(res.username, res.content));
@@ -218,27 +173,38 @@
     function loadNext() {
         if (loading || curPage >= maxPages) return;
         loading = true;
+        failed = false;
+        retry.style.display = 'none';
         loader.style.display = 'block';
-        get('index.php?page=gallery-json&p=' + (curPage + 1), function(res) {
-            curPage  = res.page;
-            maxPages = res.pages;
+        var nextPage = curPage + 1;
+        get('/?page=gallery-json&p=' + nextPage, function(res) {
+            if (!res || res.page !== nextPage || typeof res.pages !== 'number'
+                || !Array.isArray(res.images)) throw new Error('Invalid gallery response');
+            // Build before appending so a malformed card cannot partially duplicate a page.
+            var fragment = document.createDocumentFragment();
             res.images.forEach(function(img) {
-                grid.appendChild(buildCard(img));
+                fragment.appendChild(buildCard(img));
             });
+            grid.appendChild(fragment);
+            curPage = res.page;
+            maxPages = res.pages;
+        }, function() {
+            failed = true;
+            retry.style.display = 'inline-block';
+        }, function() {
             loader.style.display = 'none';
             loading = false;
         });
     }
 
+    retry.addEventListener('click', loadNext);
+
     // ── Scroll listener ───────────────────────────────────────────────────────
     window.addEventListener('scroll', function() {
         var rect = sentinel.getBoundingClientRect();
-        if (rect.top <= window.innerHeight + 200) loadNext();
+        if (!failed && rect.top <= window.innerHeight + 200) loadNext();
     });
 
     // trigger immediately in case first page doesn't fill the viewport
     loadNext();
 })();
-</script>
-
-<?php require __DIR__ . '/partials/footer.php'; ?>
