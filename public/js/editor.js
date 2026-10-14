@@ -34,7 +34,7 @@
         };
     }
 
-    // Subject V.4: capture stays disabled until a camera/photo is ready
+    // Capture stays disabled until a camera/photo is ready
     // AND at least one overlay is selected. (The server checks this again.)
     function updateCaptureBtn() {
         btnCapture.disabled = !(hasMedia && stickers.length > 0);

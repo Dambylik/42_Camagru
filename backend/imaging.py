@@ -12,63 +12,95 @@ MAX_BYTES = 5 * 1024 * 1024
 
 
 def compose(data_url, sticker_json, overlays, root):
-    prefix = "data:image/png;base64,"
-    if not data_url.startswith(prefix):
+    expected_prefix = "data:image/png;base64,"
+    if not data_url.startswith(expected_prefix):
         raise ValueError("Invalid image data.")
+
     try:
-        # PHP: base64_decode($value, true); json_decode($json, true) parses stickers.
-        raw = base64.b64decode(data_url[len(prefix) :], validate=True)
-        stickers = json.loads(sticker_json)
+        image_text = data_url[len(expected_prefix) :]
+        image_bytes = base64.b64decode(image_text, validate=True)
+        sticker_list = json.loads(sticker_json)
     except (ValueError, binascii.Error):
         raise ValueError("Invalid image or sticker data.") from None
-    if not raw or len(raw) > MAX_BYTES:
+
+    if not image_bytes or len(image_bytes) > MAX_BYTES:
         raise ValueError("Image must be at most 5 MB.")
-    if not isinstance(stickers, list) or not 1 <= len(stickers) <= 20:
+
+    if not isinstance(sticker_list, list) or not 1 <= len(sticker_list) <= 20:
         raise ValueError("Pick between one and twenty overlays.")
+
     try:
-        # PHP GD extension: imagecreatefromstring(), imagesx(), imagesy().
-        with Image.open(io.BytesIO(raw), formats=["PNG"]) as base:
-            if max(base.size) > 4000 or base.width * base.height > 16000000:
+        with Image.open(io.BytesIO(image_bytes), formats=["PNG"]) as original_image:
+            image_width, image_height = original_image.size
+            if (
+                max(image_width, image_height) > 4000
+                or image_width * image_height > 16000000
+            ):
                 raise ValueError("Image dimensions must be at most 4000 x 4000.")
-            base.load()
-            # PHP GD: imagecreatetruecolor() + imagecopyresampled();
-            # imagesavealpha() configures alpha preservation.
-            out = base.convert("RGBA").resize((600, 600), Image.Resampling.LANCZOS)
+            original_image.load()
+            final_image = original_image.convert("RGBA")
+            final_image = final_image.resize(
+                (600, 600), Image.Resampling.LANCZOS
+            )
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
         raise ValueError("Could not decode the image.") from None
-    allowed = {int(item["id"]): item["path"] for item in overlays}
-    for sticker in stickers:
+
+    allowed_overlay_paths = {}
+    for overlay in overlays:
+        overlay_id = int(overlay["id"])
+        allowed_overlay_paths[overlay_id] = overlay["path"]
+
+    for sticker in sticker_list:
         if not isinstance(sticker, dict):
             raise ValueError("Invalid overlay.")
+
         try:
-            values = [sticker[k] for k in ("id", "x", "y", "w", "h")]
-            if any(
-                isinstance(v, bool)
-                or not isinstance(v, (int, float))
-                or not math.isfinite(v)
-                for v in values
-            ):
+            sticker_id = sticker["id"]
+            x_position = sticker["x"]
+            y_position = sticker["y"]
+            sticker_width = sticker["w"]
+            sticker_height = sticker["h"]
+            sticker_values = [
+                sticker_id,
+                x_position,
+                y_position,
+                sticker_width,
+                sticker_height,
+            ]
+
+            for value in sticker_values:
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError()
+                if not math.isfinite(value):
+                    raise ValueError()
+
+            sticker_id = int(sticker_id)
+            x_position = int(x_position)
+            y_position = int(y_position)
+            sticker_width = int(sticker_width)
+            sticker_height = int(sticker_height)
+
+            if sticker_id not in allowed_overlay_paths:
                 raise ValueError()
-            ident, x, y, width, height = map(int, values)
-            if ident not in allowed or not (
-                0 <= x < 600
-                and 0 <= y < 600
-                and 1 <= width <= 600
-                and 1 <= height <= 600
-            ):
+            if not (0 <= x_position < 600 and 0 <= y_position < 600):
                 raise ValueError()
-            # PHP: basename() extracts the filename from a path.
-            path = Path(root) / "overlays" / Path(allowed[ident]).name
-            with Image.open(path, formats=["PNG"]) as overlay:
-                layer = overlay.convert("RGBA").resize(
-                    (width, height), Image.Resampling.LANCZOS
+            if not (1 <= sticker_width <= 600 and 1 <= sticker_height <= 600):
+                raise ValueError()
+
+            overlay_filename = Path(allowed_overlay_paths[sticker_id]).name
+            overlay_path = Path(root) / "overlays" / overlay_filename
+
+            with Image.open(overlay_path, formats=["PNG"]) as overlay_image:
+                overlay_image = overlay_image.convert("RGBA")
+                overlay_image = overlay_image.resize(
+                    (sticker_width, sticker_height), Image.Resampling.LANCZOS
                 )
-                # PHP GD: imagecopy() with alpha blending enabled.
-                # Equivalent capability; resampling/compositing need not produce identical pixels.
-                out.alpha_composite(layer, dest=(x, y))
+                final_image.alpha_composite(
+                    overlay_image, dest=(x_position, y_position)
+                )
         except (KeyError, TypeError, ValueError, OSError, UnidentifiedImageError):
             raise ValueError("Pick a valid overlay and position.") from None
+
     result = io.BytesIO()
-    # PHP GD: imagepng(); output buffering can collect the encoded bytes.
-    out.save(result, format="PNG")
+    final_image.save(result, format="PNG")
     return result.getvalue()
