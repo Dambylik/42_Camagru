@@ -8,11 +8,13 @@ import time
 from http.cookies import SimpleCookie, CookieError
 import bcrypt
 
+# PHP: preg_match() performs regular-expression checks.
 USERNAME = re.compile("[A-Za-z0-9_]{3,30}\\Z")
 EMAIL = re.compile("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9.-]+\\Z")
 TOKEN = re.compile("[a-f0-9]{64}\\Z")
 
 
+# PHP: mb_strlen() counts characters; strlen() counts UTF-8 bytes.
 def strong(password):
     return (
         8 <= len(password)
@@ -24,27 +26,32 @@ def strong(password):
 
 
 def password_hash(password):
+    # PHP: password_hash($password, PASSWORD_BCRYPT), including a random salt.
     return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 
 
 def password_matches(password, hashed):
     try:
+        # PHP: password_verify($password, $hash).
         return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("ascii"))
     except (ValueError, UnicodeError):
         return False
 
 
 def token_hash(token):
+    # PHP: hash("sha256", $token).
     return hashlib.sha256(token.encode("ascii")).hexdigest()
 
 
 def session(connection, cookie_header):
+    # PHP exposes parsed request cookies through $_COOKIE.
     cookies = SimpleCookie()
     try:
         cookies.load(cookie_header or "")
         sid = cookies["camagru_session"].value if "camagru_session" in cookies else ""
     except CookieError:
         sid = ""
+    # PHP: time() returns the current Unix timestamp.
     now = int(time.time())
     database.sessions_expire(connection, (now,))
     row = (
@@ -53,6 +60,7 @@ def session(connection, cookie_header):
         else None
     )
     if row is None:
+        # PHP: bin2hex(random_bytes(32)); CSRF tokens use the same operation.
         sid = secrets.token_hex(32)
         row = {
             "id": token_hash(sid),
@@ -105,6 +113,7 @@ def fail(message, status=400):
     raise Problem(message, status)
 
 
+# PHP: filter_var($value, FILTER_VALIDATE_INT), followed by range checks.
 def number(value):
     try:
         result = int(value)

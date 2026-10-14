@@ -16,6 +16,7 @@ USER_ATTRS = 'required minlength="3" maxlength="30" pattern="[A-Za-z0-9_]{3,30}"
 
 def e(value):
     """Display a value as text, rather than executable HTML."""
+    # PHP: htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, "UTF-8").
     return escape(str(value), quote=True)
 
 

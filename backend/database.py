@@ -4,6 +4,7 @@ import os
 import pymysql
 
 
+# PHP: new PDO(...) with the PDO MySQL extension; getenv() reads environment values.
 def connect():
     return pymysql.connect(
         host=os.environ.get("DB_HOST", "db"),
@@ -19,6 +20,8 @@ def connect():
     )
 
 
+# PHP: PDO::prepare(), execute(), then fetchAll(PDO::FETCH_ASSOC).
+# PyMySQL escapes values client-side; it does not use server-side PREPARE.
 def fetch_all(connection, sql, values=()):
     with connection.cursor() as cursor:
         cursor.execute(sql, values)
@@ -30,6 +33,7 @@ def fetch_one(connection, sql, values=()):
     return rows[0] if rows else None
 
 
+# PHP: prepare()/execute(), PDO::lastInsertId(), PDOStatement::rowCount().
 def execute(connection, sql, values=()):
     with connection.cursor() as cursor:
         cursor.execute(sql, values)

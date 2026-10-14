@@ -12,7 +12,7 @@
     var retry = document.getElementById("scroll-retry");
     var pagination = document.getElementById("pagination");
 
-    // Hide static pagination — infinite scroll takes over
+    // Hide static pagination - infinite scroll takes over
     if (pagination) pagination.style.display = "none";
 
     function post(url, data, cb) {

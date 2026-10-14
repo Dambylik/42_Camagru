@@ -32,6 +32,7 @@ def redirect(page):
     return (303, [("Location", "/?page=" + page)], b"")
 
 
+# PHP: json_encode() serializes response data.
 def json_response(result, status=200):
     return (
         status,
@@ -60,6 +61,7 @@ def register(request):
         request["connection"], "username", username
     ) or database.users_find_by(request["connection"], "email", email):
         security.fail("Username or email already taken.")
+    # PHP: bin2hex(random_bytes(32)) creates a secure email-link token.
     token = secrets.token_hex(32)
     database.users_create(
         request["connection"],
@@ -295,8 +297,10 @@ def capture(request):
         )
     except ValueError as error:
         security.fail(str(error))
+    # PHP: bin2hex(random_bytes(16)) creates a random upload filename.
     filename = secrets.token_hex(16) + ".png"
     upload_path = ROOT / "uploads" / filename
+    # PHP: file_put_contents() writes bytes; unlink() removes an upload.
     upload_path.write_bytes(image_bytes)
     try:
         database.images_create(request["connection"], (request["user"]["id"], filename))
@@ -328,6 +332,7 @@ def dispatch(request):
         if request["origin"] and request["origin"].rstrip("/") != expected:
             raise Problem("Invalid request origin.", 403)
         supplied = request["data"].get("_csrf_token", "")
+        # PHP: hash_equals($stored, $supplied) compares tokens securely.
         if not security.TOKEN.fullmatch(supplied) or not secrets.compare_digest(
             supplied, request["session"]["csrf_token"]
         ):
@@ -392,6 +397,7 @@ def handle(method, page, query, data, cookie, origin):
             ):
                 request["sid"] = security.rotate(connection, request["session"])
                 request["user"] = None
+        # PHP: PDO::commit(); rollback() corresponds to PDO::rollBack().
         connection.commit()
         try:
             result = dispatch(request)
@@ -429,6 +435,7 @@ def handle(method, page, query, data, cookie, origin):
         secure = (
             "; Secure" if os.environ.get("APP_URL", "").startswith("https://") else ""
         )
+        # PHP: header() adds response headers; setcookie() sets cookie options.
         headers.append(
             (
                 "Set-Cookie",

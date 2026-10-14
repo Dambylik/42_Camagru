@@ -1,3 +1,6 @@
+# PHP equivalent: PDO with the PDO MySQL extension for MariaDB queries.
 PyMySQL==1.1.2
+# PHP equivalent: password_hash(..., PASSWORD_BCRYPT) and password_verify().
 bcrypt==5.0.0
+# PHP equivalent: GD extension for image decoding, resizing, compositing and PNG output.
 Pillow==12.3.0

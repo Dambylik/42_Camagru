@@ -6,6 +6,9 @@ from email.message import EmailMessage
 
 
 def send(to, subject, body):
+    # PHP: mail($to, $subject, $body, $headers) provides email delivery.
+    # mail() delegates transport to configured mail software; smtplib connects
+    # directly to our SMTP server.
     message = EmailMessage()
     message["From"] = os.environ.get("MAIL_FROM", "noreply@camagru.local")
     message["To"] = to

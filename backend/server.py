@@ -12,6 +12,7 @@ rates = {}
 
 
 def parameters(value):
+    # PHP: parse_str(); duplicate-field rejection is our additional validation.
     fields = parse_qs(value, keep_blank_values=True, max_num_fields=30, errors="strict")
     if any(len(items) != 1 for items in fields.values()):
         raise ValueError("Duplicate fields")
@@ -48,6 +49,7 @@ def dispatch(environ):
         if count >= 120:
             return response(429, b"Too many requests. Please try again later.")
         rates[ip] = (start, count + 1)
+        # PHP: file_get_contents("php://input") reads the raw request body.
         raw = environ["wsgi.input"].read(length)
         if len(raw) != length:
             raise ValueError("Incomplete request")
@@ -74,6 +76,7 @@ def application(environ, start_response):
             500, b"Temporarily unavailable. Please try again later."
         )
     headers.extend([("Content-Length", str(len(body))), ("Cache-Control", "no-store")])
+    # PHP: http_response_code() and header(); echo outputs the response body.
     start_response(f"{status} {HTTPStatus(status).phrase}", headers)
     return [body]
 
@@ -83,6 +86,8 @@ class QuietHandler(WSGIRequestHandler):
         pass
 
 
+# WSGI is a Python interface, not a PHP function. PHP uses its web-server
+# SAPI or built-in development server to invoke application code.
 if __name__ == "__main__":
     make_server(
         "0.0.0.0", 8000, application, handler_class=QuietHandler
