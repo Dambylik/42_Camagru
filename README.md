@@ -83,11 +83,18 @@ interpretation of the subject's PHP-equivalent rule for evaluation.
 
 ## Data and diagnostics
 
-`db_data` persists the database; `uploads_data` persists photos and is mounted read-only
-in Nginx. `public/overlays` is packaged into both images and is not deleted by volume resets.
+`db_data` persists the database. Uploaded photos are saved in `public/uploads` on the host;
+the app container can write there and Nginx mounts the same folder read-only.
+`public/overlays` is packaged into both images and is not deleted by volume resets.
 
-`make down` keeps data. `make clean`, `make fclean` and `make re` delete database/uploads.
-Only use those reset commands when that is intended.
+`make down` keeps data. `make clean`, `make fclean` and `make re` delete the database
+volume, but do not delete photos in `public/uploads`. Before switching from the old
+`uploads_data` Docker volume, copy its photos into the host folder while the old
+containers are still running:
+
+```sh
+docker compose cp web:/usr/share/nginx/html/uploads/. ./public/uploads/
+```
 
 Application errors return generic responses and are recorded privately in
 `/tmp/camagru-errors.log` inside `app`. Nginx errors are recorded in

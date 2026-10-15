@@ -1,244 +1,409 @@
 (function () {
     var config = document.getElementById("gallery-config").dataset;
-    var CSRF = config.csrf;
-    var loggedIn = config.loggedIn === "true";
-    var curPage = Number(config.page);
-    var maxPages = Number(config.pages);
-    var loading = false;
-    var failed = false;
-    var grid = document.querySelector(".gallery-grid");
-    var sentinel = document.getElementById("scroll-sentinel");
-    var loader = document.getElementById("scroll-loader");
-    var retry = document.getElementById("scroll-retry");
+    var csrfToken = config.csrf;
+    var isLoggedIn = config.loggedIn === "true";
+    var currentPage = Number(config.page);
+    var lastPage = Number(config.pages);
+    var isLoading = false;
+    var hasLoadFailed = false;
+
+    var galleryGrid = document.querySelector(".gallery-grid");
+    var scrollMarker = document.getElementById("scroll-sentinel");
+    var loadingMessage = document.getElementById("scroll-loader");
+    var retryButton = document.getElementById("scroll-retry");
     var pagination = document.getElementById("pagination");
 
-    // Hide static pagination - infinite scroll takes over
-    if (pagination) pagination.style.display = "none";
-
-    function post(url, data, cb) {
-        data["_csrf_token"] = CSRF;
-        var body = Object.keys(data)
-            .map(function (k) {
-                return encodeURIComponent(k) + "=" + encodeURIComponent(data[k]);
-            })
-            .join("&");
-        var xhr = new XMLHttpRequest();
-        xhr.open("POST", url, true);
-        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-        xhr.onload = function () {
-            if (xhr.status === 200) {
-                try {
-                    cb(JSON.parse(xhr.responseText));
-                } catch (e) {}
-            }
-        };
-        xhr.send(body);
+    // Hide page numbers because this page loads more photos while scrolling.
+    if (pagination) {
+        pagination.style.display = "none";
     }
 
-    function get(url, cb, fail, done) {
-        var xhr = new XMLHttpRequest();
-        var settled = false;
-        function finish(error, result) {
-            if (settled) return;
-            settled = true;
+    function makeFormBody(data) {
+        var keys = Object.keys(data);
+        var fields = [];
+        var i;
+        var key;
+        var field;
+
+        for (i = 0; i < keys.length; i += 1) {
+            key = keys[i];
+            field = encodeURIComponent(key) + "="
+                + encodeURIComponent(data[key]);
+            fields.push(field);
+        }
+
+        return fields.join("&");
+    }
+
+    function sendPostRequest(url, data, onSuccess) {
+        var request = new XMLHttpRequest();
+
+        data["_csrf_token"] = csrfToken;
+
+        request.open("POST", url, true);
+        request.setRequestHeader(
+            "Content-Type",
+            "application/x-www-form-urlencoded"
+        );
+
+        request.onload = function () {
+            var result;
+
+            if (request.status !== 200) {
+                return;
+            }
+
             try {
-                if (error) fail();
-                else cb(result);
-            } catch (e) {
-                fail();
+                result = JSON.parse(request.responseText);
+            } catch (error) {
+                return;
+            }
+
+            onSuccess(result);
+        };
+
+        request.send(makeFormBody(data));
+    }
+
+    function sendGetRequest(url, onSuccess, onFailure, onComplete) {
+        var request = new XMLHttpRequest();
+        var isFinished = false;
+
+        function finishRequest(hasError, result) {
+            if (isFinished) {
+                return;
+            }
+
+            isFinished = true;
+
+            try {
+                if (hasError) {
+                    onFailure();
+                } else {
+                    onSuccess(result);
+                }
+            } catch (error) {
+                onFailure();
             } finally {
-                done();
+                onComplete();
             }
         }
+
         try {
-            xhr.open("GET", url, true);
-            xhr.timeout = 15000;
-            xhr.onload = function () {
-                if (xhr.status !== 200) {
-                    finish(true);
-                    return;
-                }
+            request.open("GET", url, true);
+            request.timeout = 15000;
+
+            request.onload = function () {
                 var result;
-                try {
-                    result = JSON.parse(xhr.responseText);
-                } catch (e) {
-                    finish(true);
+
+                if (request.status !== 200) {
+                    finishRequest(true);
                     return;
                 }
-                finish(false, result);
+
+                try {
+                    result = JSON.parse(request.responseText);
+                } catch (error) {
+                    finishRequest(true);
+                    return;
+                }
+
+                finishRequest(false, result);
             };
-            xhr.onerror =
-                xhr.ontimeout =
-                xhr.onabort =
-                    function () {
-                        finish(true);
-                    };
-            xhr.send();
-        } catch (e) {
-            finish(true);
+
+            request.onerror = function () {
+                finishRequest(true);
+            };
+
+            request.ontimeout = function () {
+                finishRequest(true);
+            };
+
+            request.onabort = function () {
+                finishRequest(true);
+            };
+
+            request.send();
+        } catch (error) {
+            finishRequest(true);
         }
     }
 
-    // ── Build a card from JSON data ───────────────────────────────────────────
-    function buildCard(img) {
-        var card = document.createElement("div");
-        card.className = "gallery-card";
-        card.id = "img-" + img.id;
+    function makeComment(username, content) {
+        var comment = document.createElement("div");
+        var author = document.createElement("span");
 
-        var image = document.createElement("img");
-        image.src = "uploads/" + img.path;
-        image.alt = "Image by " + img.username;
-        card.appendChild(image);
+        comment.className = "comment";
+        author.className = "author";
+        author.textContent = username;
+        comment.appendChild(author);
+        comment.appendChild(document.createTextNode(content));
 
-        var meta = document.createElement("div");
-        meta.className = "meta";
-        var uname = document.createElement("span");
-        uname.textContent = img.username;
-        meta.appendChild(uname);
+        return comment;
+    }
 
-        if (loggedIn) {
-            var btn = document.createElement("button");
-            btn.className = "like-btn" + (img.liked ? " liked" : "");
-            btn.setAttribute("data-id", img.id);
-            btn.innerHTML = '💞 <span class="like-count">' + img.like_count + "</span>";
-            bindLike(btn);
-            meta.appendChild(btn);
-        } else {
-            var lspan = document.createElement("span");
-            lspan.textContent = "💞 " + img.like_count;
-            meta.appendChild(lspan);
+    function addLikeButton(meta, image) {
+        var button = document.createElement("button");
+        var heart = document.createTextNode("💞 ");
+        var count = document.createElement("span");
+        var className = "like-btn";
+
+        if (image.liked) {
+            className += " liked";
         }
+
+        button.className = className;
+        button.setAttribute("data-id", image.id);
+        count.className = "like-count";
+        count.textContent = image.like_count;
+
+        button.appendChild(heart);
+        button.appendChild(count);
+        bindLikeButton(button);
+        meta.appendChild(button);
+    }
+
+    function addLikeCount(meta, image) {
+        var count = document.createElement("span");
+        count.textContent = "💞 " + image.like_count;
+        meta.appendChild(count);
+    }
+
+    function addCommentForm(comments, image) {
+        var form = document.createElement("form");
+        var input = document.createElement("input");
+        var submitButton = document.createElement("button");
+
+        form.className = "comment-form";
+        form.setAttribute("data-id", image.id);
+
+        input.type = "text";
+        input.name = "content";
+        input.placeholder = "Say something nice... 🐱";
+        input.maxLength = 500;
+        input.required = true;
+
+        submitButton.className = "btn btn-ghost";
+        submitButton.type = "submit";
+        submitButton.textContent = "Post";
+
+        form.appendChild(input);
+        form.appendChild(submitButton);
+        bindCommentForm(form);
+        comments.appendChild(form);
+    }
+
+    function makeGalleryCard(image) {
+        var card = document.createElement("div");
+        var photo = document.createElement("img");
+        var meta = document.createElement("div");
+        var username = document.createElement("span");
+        var comments = document.createElement("div");
+        var commentList = document.createElement("div");
+        var i;
+        var commentData;
+
+        card.className = "gallery-card";
+        card.id = "img-" + image.id;
+
+        photo.src = "uploads/" + image.path;
+        photo.alt = "Image by " + image.username;
+        card.appendChild(photo);
+
+        meta.className = "meta";
+        username.textContent = image.username;
+        meta.appendChild(username);
+
+        if (isLoggedIn) {
+            addLikeButton(meta, image);
+        } else {
+            addLikeCount(meta, image);
+        }
+
         card.appendChild(meta);
 
-        var comments = document.createElement("div");
         comments.className = "comments";
-        var list = document.createElement("div");
-        list.className = "comment-list";
-        img.comments.forEach(function (c) {
-            list.appendChild(buildComment(c.username, c.content));
-        });
-        comments.appendChild(list);
+        commentList.className = "comment-list";
 
-        if (loggedIn) {
-            var form = document.createElement("form");
-            form.className = "comment-form";
-            form.setAttribute("data-id", img.id);
-            var input = document.createElement("input");
-            input.type = "text";
-            input.name = "content";
-            input.placeholder = "Say something nice... 🐱";
-            input.maxLength = 500;
-            input.required = true;
-            var submitBtn = document.createElement("button");
-            submitBtn.className = "btn btn-ghost";
-            submitBtn.type = "submit";
-            submitBtn.textContent = "Post";
-            form.appendChild(input);
-            form.appendChild(submitBtn);
-            bindComment(form);
-            comments.appendChild(form);
+        for (i = 0; i < image.comments.length; i += 1) {
+            commentData = image.comments[i];
+            commentList.appendChild(
+                makeComment(commentData.username, commentData.content)
+            );
         }
+
+        comments.appendChild(commentList);
+
+        if (isLoggedIn) {
+            addCommentForm(comments, image);
+        }
+
         card.appendChild(comments);
         return card;
     }
 
-    function buildComment(username, content) {
-        var div = document.createElement("div");
-        div.className = "comment";
-        var author = document.createElement("span");
-        author.className = "author";
-        author.textContent = username;
-        div.appendChild(author);
-        div.appendChild(document.createTextNode(content));
-        return div;
-    }
+    function bindLikeButton(button) {
+        button.addEventListener("click", function () {
+            var imageId = button.getAttribute("data-id");
 
-    // ── Bind like ─────────────────────────────────────────────────────────────
-    function bindLike(btn) {
-        btn.addEventListener("click", function () {
-            var id = btn.getAttribute("data-id");
-            post("/?page=like-ajax", { image_id: id }, function (res) {
-                if (res.error) return;
-                btn.querySelector(".like-count").textContent = res.count;
-                if (res.liked) btn.classList.add("liked");
-                else btn.classList.remove("liked");
-            });
-        });
-    }
+            sendPostRequest(
+                "/?page=like-ajax",
+                { image_id: imageId },
+                function (result) {
+                    var count;
 
-    // ── Bind comment ──────────────────────────────────────────────────────────
-    function bindComment(form) {
-        form.addEventListener("submit", function (e) {
-            e.preventDefault();
-            var id = form.getAttribute("data-id");
-            var input = form.querySelector("input[name=content]");
-            var content = input.value.trim();
-            if (!content) return;
-            post(
-                "/?page=comment-ajax",
-                { image_id: id, content: content },
-                function (res) {
-                    if (res.error) return;
-                    var list = document.querySelector("#img-" + id + " .comment-list");
-                    list.appendChild(buildComment(res.username, res.content));
-                    input.value = "";
-                },
+                    if (result.error) {
+                        return;
+                    }
+
+                    count = button.querySelector(".like-count");
+                    count.textContent = result.count;
+
+                    if (result.liked) {
+                        button.classList.add("liked");
+                    } else {
+                        button.classList.remove("liked");
+                    }
+                }
             );
         });
     }
 
-    // ── Bind existing cards ───────────────────────────────────────────────────
-    var likeBtns = document.querySelectorAll(".like-btn[data-id]");
-    for (var i = 0; i < likeBtns.length; i++) bindLike(likeBtns[i]);
-    var commentForms = document.querySelectorAll(".comment-form[data-id]");
-    for (var j = 0; j < commentForms.length; j++) bindComment(commentForms[j]);
+    function bindCommentForm(form) {
+        form.addEventListener("submit", function (event) {
+            var imageId;
+            var input;
+            var content;
 
-    // ── Load next page ────────────────────────────────────────────────────────
-    function loadNext() {
-        if (loading || curPage >= maxPages) return;
-        loading = true;
-        failed = false;
-        retry.style.display = "none";
-        loader.style.display = "block";
-        var nextPage = curPage + 1;
-        get(
-            "/?page=gallery-json&p=" + nextPage,
-            function (res) {
-                if (
-                    !res ||
-                    res.page !== nextPage ||
-                    typeof res.pages !== "number" ||
-                    !Array.isArray(res.images)
-                )
+            event.preventDefault();
+
+            imageId = form.getAttribute("data-id");
+            input = form.querySelector("input[name=content]");
+            content = input.value.trim();
+
+            if (!content) {
+                return;
+            }
+
+            sendPostRequest(
+                "/?page=comment-ajax",
+                { image_id: imageId, content: content },
+                function (result) {
+                    var commentList;
+
+                    if (result.error) {
+                        return;
+                    }
+
+                    commentList = document.querySelector(
+                        "#img-" + imageId + " .comment-list"
+                    );
+                    commentList.appendChild(
+                        makeComment(result.username, result.content)
+                    );
+                    input.value = "";
+                }
+            );
+        });
+    }
+
+    function bindExistingButtons() {
+        var likeButtons = document.querySelectorAll(".like-btn[data-id]");
+        var commentForms = document.querySelectorAll(".comment-form[data-id]");
+        var i;
+
+        for (i = 0; i < likeButtons.length; i += 1) {
+            bindLikeButton(likeButtons[i]);
+        }
+
+        for (i = 0; i < commentForms.length; i += 1) {
+            bindCommentForm(commentForms[i]);
+        }
+    }
+
+    function isValidGalleryResponse(result, expectedPage) {
+        if (!result) {
+            return false;
+        }
+
+        if (result.page !== expectedPage) {
+            return false;
+        }
+
+        if (typeof result.pages !== "number") {
+            return false;
+        }
+
+        if (!Array.isArray(result.images)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function addImagesToGallery(images) {
+        var fragment = document.createDocumentFragment();
+        var i;
+
+        for (i = 0; i < images.length; i += 1) {
+            fragment.appendChild(makeGalleryCard(images[i]));
+        }
+
+        galleryGrid.appendChild(fragment);
+    }
+
+    function loadNextPage() {
+        var nextPage;
+        var url;
+
+        if (isLoading || currentPage >= lastPage) {
+            return;
+        }
+
+        isLoading = true;
+        hasLoadFailed = false;
+        retryButton.style.display = "none";
+        loadingMessage.style.display = "block";
+
+        nextPage = currentPage + 1;
+        url = "/?page=gallery-json&p=" + nextPage;
+
+        sendGetRequest(
+            url,
+            function (result) {
+                if (!isValidGalleryResponse(result, nextPage)) {
                     throw new Error("Invalid gallery response");
-                // Build before appending so a malformed card cannot partially duplicate a page.
-                var fragment = document.createDocumentFragment();
-                res.images.forEach(function (img) {
-                    fragment.appendChild(buildCard(img));
-                });
-                grid.appendChild(fragment);
-                curPage = res.page;
-                maxPages = res.pages;
+                }
+
+                // Build all cards first, then add them together.
+                addImagesToGallery(result.images);
+                currentPage = result.page;
+                lastPage = result.pages;
             },
             function () {
-                failed = true;
-                retry.style.display = "inline-block";
+                hasLoadFailed = true;
+                retryButton.style.display = "inline-block";
             },
             function () {
-                loader.style.display = "none";
-                loading = false;
-            },
+                loadingMessage.style.display = "none";
+                isLoading = false;
+            }
         );
     }
 
-    retry.addEventListener("click", loadNext);
+    function handleWindowScroll() {
+        var markerBounds = scrollMarker.getBoundingClientRect();
+        var shouldLoadMore = markerBounds.top <= window.innerHeight + 200;
 
-    // ── Scroll listener ───────────────────────────────────────────────────────
-    window.addEventListener("scroll", function () {
-        var rect = sentinel.getBoundingClientRect();
-        if (!failed && rect.top <= window.innerHeight + 200) loadNext();
-    });
+        if (!hasLoadFailed && shouldLoadMore) {
+            loadNextPage();
+        }
+    }
 
-    // trigger immediately in case first page doesn't fill the viewport
-    loadNext();
+    bindExistingButtons();
+    retryButton.addEventListener("click", loadNextPage);
+    window.addEventListener("scroll", handleWindowScroll);
+
+    // Load another page immediately if the first page is shorter than the screen.
+    loadNextPage();
 })();

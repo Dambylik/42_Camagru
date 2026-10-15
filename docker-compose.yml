@@ -8,7 +8,7 @@ services:
         environment:
             NGINX_ENTRYPOINT_QUIET_LOGS: "1"
         volumes:
-            - uploads_data:/usr/share/nginx/html/uploads:ro
+            - ./public/uploads:/usr/share/nginx/html/uploads:ro
         depends_on:
             - app
     app:
@@ -16,7 +16,7 @@ services:
             context: .
             dockerfile: Dockerfile
         volumes:
-            - uploads_data:/app/public/uploads
+            - ./public/uploads:/app/public/uploads
         environment:
             DB_HOST: db
             DB_NAME: ${MYSQL_DATABASE}
@@ -54,4 +54,3 @@ services:
             - "127.0.0.1:8025:8025"
 volumes:
     db_data:
-    uploads_data:
